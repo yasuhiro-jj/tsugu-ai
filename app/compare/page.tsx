@@ -119,7 +119,7 @@ export default async function ComparePage() {
       )}
 
       {rows !== null && visible.length > 0 && (
-        <DiagnosisSection initialRecord={diagnosis} financial={financial} />
+        <DiagnosisSection initialRecord={diagnosis} financial={financial} role={role} />
       )}
     </>
   );

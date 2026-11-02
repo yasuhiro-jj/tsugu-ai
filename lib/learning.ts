@@ -16,7 +16,7 @@ import type {
   LearningPlan,
   LearningState,
 } from "./plan-types";
-import { ServiceError } from "./errors";
+import { MSG_CONFLICT, ServiceError } from "./errors";
 import { getDb } from "./db";
 import { DEMO_PROFILES } from "./demo-profiles";
 import {
@@ -52,15 +52,35 @@ type StoredPlan = NonNullable<LearningState["current"]>;
 
 type LearningRow = { level: Level; wants: string; current: StoredPlan | null; previous: StoredPlan | null; rev: number };
 
+/** DB に保存した学習プランを読む。形が違う項目は捨てる（REV-009：保存した JSON も軽く確かめる） */
 function parseStoredPlan(raw: unknown): StoredPlan | null {
   if (typeof raw !== "string") return null;
+  let v: unknown;
   try {
-    const v = JSON.parse(raw);
-    if (!v || typeof v !== "object" || !v.plan || !Array.isArray(v.plan.plan)) return null;
-    return { plan: v.plan as LearningPlan, createdAt: String(v.createdAt), usedDiagnosis: v.usedDiagnosis === true };
+    v = JSON.parse(raw);
   } catch {
     return null;
   }
+  const o = obj(v);
+  const p = o ? obj(o.plan) : null;
+  if (!o || !p || !Array.isArray(p.plan)) return null;
+  const items: LearningPlan["plan"] = [];
+  for (const it of p.plan) {
+    const x = obj(it);
+    if (!x || !isCourseId(x.course_id)) continue;
+    items.push({
+      order: Number.isFinite(Number(x.order)) ? Number(x.order) : items.length + 1,
+      course_id: x.course_id,
+      week: Number.isFinite(Number(x.week)) ? Number(x.week) : 1,
+      reason: typeof x.reason === "string" ? x.reason : "",
+      linked_gap: typeof x.linked_gap === "string" ? x.linked_gap : "",
+    });
+  }
+  return {
+    plan: { plan: items, message: typeof p.message === "string" ? p.message : "" },
+    createdAt: typeof o.createdAt === "string" ? o.createdAt : "",
+    usedDiagnosis: o.usedDiagnosis === true,
+  };
 }
 
 async function loadLearningRow(db: Client, demoId: string): Promise<LearningRow | null> {
@@ -241,10 +261,12 @@ export async function createLearningPlan(
   body: Record<string, unknown>,
 ): Promise<LearningState> {
   const wantsInput = body.wants === undefined ? undefined : validateWants(body.wants);
+  // 診断の読み出しを先に行う（使えない診断なら getDiagnosisFrom が無効化して learning.rev を進めるため、
+  // rev を読む ensureLearningRow より後だと AI を呼んだあと必ず 409 になっていた。REV-005）
+  const diag = await getDiagnosisFrom(deps.db, demoId);
   const row = await ensureLearningRow(deps.db, demoId);
   const wants = wantsInput ?? row.wants;
   const progress = await loadProgress(deps.db, demoId);
-  const diag = await getDiagnosisFrom(deps.db, demoId);
   const profile = DEMO_PROFILES.successor;
 
   const courses = getCourses().map((c) => ({ course_id: c.id, title: c.title, level: c.level, goal: c.goal, 診断とのつながり: c.linkedGap }));
@@ -286,7 +308,7 @@ export async function createLearningPlan(
     args: [wants, JSON.stringify(stored), nowIso(), demoId, row.rev],
   });
   if (rs.rowsAffected !== 1) {
-    throw new ServiceError(409, "ほかの操作と重なりました。画面を読み込み直してください");
+    throw new ServiceError(409, MSG_CONFLICT);
   }
   return getLearningStateFrom(deps.db, demoId);
 }

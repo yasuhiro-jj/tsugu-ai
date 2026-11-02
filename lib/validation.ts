@@ -3,6 +3,7 @@
 import { isThemeKey, type ThemeKey } from "./themes";
 import type { ThemeSummary } from "./interview-types";
 import { ServiceError } from "./errors";
+import { charLen as charLength } from "./util";
 
 export const MESSAGE_MAX_CHARS = 1000;
 export const SUMMARY_ITEM_MAX_CHARS = 300;
@@ -10,10 +11,6 @@ export const SUMMARY_MAX_ITEMS = 10;
 
 const SUMMARY_FIELDS = ["statements", "ai_observations", "unconfirmed"] as const;
 
-/** 文字数（サロゲートペアを1文字として数える） */
-function charLength(s: string): number {
-  return Array.from(s).length;
-}
 
 /** 面談のメッセージ本文：前後の空白を除いて 1〜1000 文字 */
 export function validateMessageText(value: unknown): string {

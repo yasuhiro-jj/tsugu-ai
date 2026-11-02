@@ -1,13 +1,17 @@
+import "server-only";
+
 // 診断・学習プラン・解説・90日計画で使う「JSON を返す AI」の共通処理（Next.js に依存しない。テストから差し替え可）。
 // - 本番は lib/ai/claude-json.ts（構造化出力）。テストは偽の関数を渡す
-// - 1回呼ぶたびに reserveAiCall で回数を予約（上限超過は 429）
-// - 返事が壊れていたら同じ依頼を一度だけ再送。だめなら 502
+// - 1回呼ぶたびに reserveAiCall で回数を予約（上限超過は 429）。再送も数える
+// - 返事が壊れていたら同じ依頼を一度だけ再送。一時的な失敗（接続エラー・429/5xx/529）も一度だけ再送。だめなら 502
+//   （再送のルールは lib/ai/retry.ts）
 // - 入力本文・AI の返事・SDK のエラー本文はログに出さない（種類とステータスだけ）
 
 import type { Client } from "@libsql/client";
 import type { Role } from "../role";
-import { ServiceError } from "../errors";
-import { reserveAiCall } from "../interview/store";
+import { callAiWithRetry, MIN_RETRY_MS, realSleep } from "./retry";
+
+export { MIN_RETRY_MS };
 
 export type JsonAiMessage = { role: "user" | "assistant"; content: string };
 
@@ -31,12 +35,17 @@ export type JsonAiRequest = {
 /** AI に依頼して、返ってきた文字列（JSON のはず）を返す。 */
 export type JsonAi = (req: JsonAiRequest) => Promise<string>;
 
-export type AiDeps = { db: Client; ai: JsonAi; /** テスト用の時計 */ now?: () => number };
+export type AiDeps = {
+  db: Client;
+  ai: JsonAi;
+  /** テスト用の時計 */
+  now?: () => number;
+  /** テスト用の待ち（一時エラーの再送前の待ち時間） */
+  sleep?: (ms: number) => Promise<void>;
+};
 
 /** 既定の時間の予算（maxDuration 120 秒の Route 向け。DB の読み書きの分を残す） */
 export const DEFAULT_AI_BUDGET_MS = 105_000;
-/** 再送するのに最低限必要な残り時間。これより短ければ再送せず 502 */
-export const MIN_RETRY_MS = 20_000;
 
 export const MSG_AI_FAILED = "AI の応答を受け取れませんでした。少し時間をおいてもう一度お試しください";
 
@@ -63,33 +72,21 @@ export async function callJsonAi<T>(
   req: JsonAiRequest,
   parse: (v: Record<string, unknown>) => T | null,
 ): Promise<T> {
-  const now = deps.now ?? Date.now;
-  const started = now();
-  const budget = req.budgetMs ?? DEFAULT_AI_BUDGET_MS;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const remaining = budget - (now() - started);
-    if (attempt > 0 && remaining < MIN_RETRY_MS) {
-      console.warn(JSON.stringify({ level: "warn", where: `${req.purpose}.ai`, event: "no_time_for_retry" }));
-      break;
-    }
-    await reserveAiCall(deps.db, demoId, role);
-    let raw: string;
-    try {
-      raw = await deps.ai({ ...req, timeoutMs: Math.max(1_000, remaining) });
-    } catch (err) {
-      if (err instanceof ServiceError) throw err;
-      const name = err instanceof Error ? err.name : "UnknownError";
-      const status =
-        err && typeof err === "object" && "status" in err ? String((err as { status: unknown }).status) : "-";
-      console.error(JSON.stringify({ level: "error", where: `${req.purpose}.ai`, error: name, status }));
-      throw new ServiceError(502, MSG_AI_FAILED);
-    }
-    const obj = extractJsonObject(raw);
-    const parsed = obj ? parse(obj) : null;
-    if (parsed !== null) return parsed;
-    console.warn(JSON.stringify({ level: "warn", where: `${req.purpose}.ai`, event: "invalid_output", attempt }));
-  }
-  throw new ServiceError(502, MSG_AI_FAILED);
+  return callAiWithRetry({
+    db: deps.db,
+    demoId,
+    role,
+    where: `${req.purpose}.ai`,
+    budgetMs: req.budgetMs ?? DEFAULT_AI_BUDGET_MS,
+    now: deps.now ?? Date.now,
+    sleep: deps.sleep ?? realSleep,
+    call: (timeoutMs) => deps.ai({ ...req, timeoutMs }),
+    parse: (raw) => {
+      const o = extractJsonObject(raw);
+      return o ? parse(o) : null;
+    },
+    failMessage: MSG_AI_FAILED,
+  });
 }
 
 // ---- 入力データの区切り ----
@@ -111,9 +108,7 @@ export const DATA_NOTE =
 
 // ---- 出力の整形用の小道具 ----
 
-export function charLen(s: string): number {
-  return Array.from(s).length;
-}
+export { charLen } from "../util";
 
 /** 文字列なら前後の空白を除いて上限で切る。文字列でなければ null。 */
 export function str(v: unknown, max: number): string | null {

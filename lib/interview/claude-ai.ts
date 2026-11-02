@@ -10,6 +10,8 @@ import { getClaudeModel } from "../config";
 import type { AiRequest, InterviewAi } from "./service";
 
 export const INTERVIEW_MAX_TOKENS = 1500;
+/** 1回の呼び出しの待ち時間の上限の既定値（通常は service が残り時間から timeoutMs を渡す） */
+export const INTERVIEW_TIMEOUT_MS = 60_000;
 
 const stringArray = { type: "array", items: { type: "string" } } as const;
 
@@ -34,17 +36,20 @@ export const INTERVIEW_OUTPUT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-export const claudeInterviewAi: InterviewAi = async (req: AiRequest) => {
+export const claudeInterviewAi: InterviewAi = async (req: AiRequest, opts) => {
   const client = getClaudeClient();
-  const message = await client.messages.create({
-    model: getClaudeModel(),
-    max_tokens: INTERVIEW_MAX_TOKENS,
-    system: req.system,
-    messages: req.messages,
-    output_config: {
-      format: { type: "json_schema", schema: INTERVIEW_OUTPUT_SCHEMA as unknown as Record<string, unknown> },
+  const message = await client.messages.create(
+    {
+      model: getClaudeModel(),
+      max_tokens: INTERVIEW_MAX_TOKENS,
+      system: req.system,
+      messages: req.messages,
+      output_config: {
+        format: { type: "json_schema", schema: INTERVIEW_OUTPUT_SCHEMA as unknown as Record<string, unknown> },
+      },
     },
-  });
+    { timeout: Math.min(opts?.timeoutMs ?? INTERVIEW_TIMEOUT_MS, INTERVIEW_TIMEOUT_MS) },
+  );
   return message.content
     .filter((b) => b.type === "text")
     .map((b) => (b as { text: string }).text)

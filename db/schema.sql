@@ -85,5 +85,12 @@ CREATE TABLE IF NOT EXISTS action_plans (
   updated_at TEXT NOT NULL
 );
 
+-- 保存期間の削除（lib/retention.ts）などの定期処理の最後の実行時刻。1時間に1回だけ動かすために使う（SEC-201）。
+-- demo_id は持たない（利用者のデータは入らない）。
+CREATE TABLE IF NOT EXISTS maintenance (
+  key TEXT NOT NULL PRIMARY KEY,
+  last_run_at TEXT NOT NULL
+);
+
 -- 既存のデータベース向けの列追加（アプリは列が無いときだけ流す。lib/schema.ts の COLUMN_MIGRATIONS）
 -- ALTER TABLE action_plans ADD COLUMN diagnosis_created_at TEXT;

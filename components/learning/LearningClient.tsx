@@ -27,6 +27,9 @@ export default function LearningClient({ initialState, courses, wantsMax: WANTS_
   const focusPlan = useRef(false);
   const wantsId = useId();
   const wantsHelpId = useId();
+  // 数え方はサーバー（lib/learning.ts の validateWants）に合わせる：前後の空白を除き、絵文字なども1文字
+  const wantsLength = Array.from(wants.trim()).length;
+  const wantsTooLong = wantsLength > WANTS_MAX;
 
   useEffect(() => {
     if (focusPlan.current) {
@@ -36,7 +39,7 @@ export default function LearningClient({ initialState, courses, wantsMax: WANTS_
   }, [state]);
 
   async function makePlan() {
-    if (pending) return; // 二重押し防止
+    if (pending || wantsTooLong) return; // 二重押し防止・上限超えは送らない
     setPending(true);
     setError(null);
     const r = await postJson<LearningState>(
@@ -85,7 +88,7 @@ export default function LearningClient({ initialState, courses, wantsMax: WANTS_
         <p id={wantsHelpId} className="chat__help">
           <span>認識差の診断がある場合は、その結果も反映して順番を決めます。</span>
           <span>
-            {Array.from(wants).length}/{WANTS_MAX}
+            {wantsLength}/{WANTS_MAX}
           </span>
         </p>
         <div className="button-row">
@@ -93,7 +96,7 @@ export default function LearningClient({ initialState, courses, wantsMax: WANTS_
             type="button"
             className="button"
             onClick={() => void makePlan()}
-            disabled={pending}
+            disabled={pending || wantsTooLong}
             aria-busy={pending}
           >
             {pending ? "AIが作っています…" : current ? "学習プランを作り直す" : "学習プランを作る"}

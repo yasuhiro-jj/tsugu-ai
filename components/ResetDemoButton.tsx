@@ -52,7 +52,7 @@ export default function ResetDemoButton() {
   return (
     <div className="inline-confirm" role="group" aria-labelledby="reset-confirm-text">
       <p id="reset-confirm-text" ref={confirmRef} tabIndex={-1}>
-        このブラウザで入力した面談の内容（先代・後継者の両方）がすべて消えます。元に戻せません。よろしいですか？
+        このブラウザのデモで作った、面談の回答・共有の設定・認識差の診断・学習プラン・90日計画（先代・後継者の両方）がすべて消えます。元に戻せません。よろしいですか？
       </p>
       <div className="button-row">
         <button

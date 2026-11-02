@@ -26,7 +26,8 @@ export function getClaudeClient(): Anthropic {
   if (client) return client;
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) throw new ClaudeNotConfiguredError();
-  // 再試行は1回まで・1回あたり最大 60 秒（画面を長く待たせない／利用量を抑える）
+  // SDK の自動再試行は使わない（maxRetries: 0）。再送は lib/ai/retry.ts が回数を予約したうえで行う
+  // （一時的な失敗のときだけ1回）。1回あたり最大 60 秒
   client = new Anthropic({ apiKey, maxRetries: 0, timeout: 60_000 });
   return client;
 }

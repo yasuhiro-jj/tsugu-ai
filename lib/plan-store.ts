@@ -1,16 +1,13 @@
+import "server-only";
+
 // 診断・学習・90日計画のデータの削除と無効化（DB アクセスだけ。Next.js に依存しない）。
 // すべて demo_id で絞る。値はプレースホルダで渡す。
 
 import type { Client } from "@libsql/client";
 
-export function nowIso(): string {
-  return new Date().toISOString();
-}
-
-/** 日本時間の今日（YYYY-MM-DD） */
-export function jstToday(now: Date = new Date()): string {
-  return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
+// nowIso / jstToday は lib/util.ts に集めた。既存の import のためここからも公開する
+import { nowIso } from "./util";
+export { jstToday, nowIso } from "./util";
 
 /** DELETE /api/demo 用：診断・学習・講座の進み具合・90日計画を全部消す。 */
 export function deletePlanDataStatements(demoId: string) {

@@ -2,7 +2,8 @@ import "server-only";
 
 // JsonAi の本番実装（Claude API・構造化出力）。テストでは使わない。
 // - モデル名は lib/config.ts の getClaudeModel() から取る
-// - 再試行は SDK ではなく callJsonAi 側で「壊れた返事のときだけ1回」（lib/claude.ts で maxRetries: 0）
+// - 再試行は SDK ではなく callJsonAi 側（lib/ai/retry.ts）で「壊れた返事のとき1回」「一時的な失敗のとき1回」。
+//   SDK 側は lib/claude.ts で maxRetries: 0（SDK の再試行は回数の予約を通らないため使わない）
 // - 入力本文・SDK のエラー本文はログにも応答にも出さない
 
 import { getClaudeClient } from "../claude";

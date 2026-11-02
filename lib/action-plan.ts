@@ -11,7 +11,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import type { Client } from "@libsql/client";
 import type { ActionPlanState, ActionStatus, PlanAction } from "./plan-types";
-import { ServiceError } from "./errors";
+import { MSG_CONFLICT, ServiceError } from "./errors";
 import { getDb } from "./db";
 import { getCourses } from "./courses";
 import { getDiagnosisFrom } from "./diagnosis";
@@ -146,14 +146,35 @@ export function parseActionPlan(
 
 const EMPTY: ActionPlanState = { startDate: null, actions: [], message: null, createdAt: null };
 
+/** DB に保存した行動の一覧を読む。形が合わない行動は捨てる（REV-009：保存した JSON も軽く確かめる） */
 function parseActions(raw: unknown): PlanAction[] {
   if (typeof raw !== "string") return [];
+  let v: unknown;
   try {
-    const v = JSON.parse(raw);
-    return Array.isArray(v) ? (v as PlanAction[]) : [];
+    v = JSON.parse(raw);
   } catch {
     return [];
   }
+  if (!Array.isArray(v)) return [];
+  const out: PlanAction[] = [];
+  for (const it of v) {
+    if (it === null || typeof it !== "object" || Array.isArray(it)) continue;
+    const a = it as Record<string, unknown>;
+    if (typeof a.id !== "string" || typeof a.title !== "string" || typeof a.due !== "string") continue;
+    if (!OWNERS.includes(a.owner as PlanAction["owner"])) continue;
+    if (!PHASES.includes(a.phase as PlanAction["phase"])) continue;
+    out.push({
+      id: a.id,
+      title: a.title,
+      owner: a.owner as PlanAction["owner"],
+      due: a.due,
+      phase: a.phase as PlanAction["phase"],
+      linked_gap: typeof a.linked_gap === "string" ? a.linked_gap : "",
+      linked_course: typeof a.linked_course === "string" ? a.linked_course : "",
+      status: STATUSES.includes(a.status as PlanAction["status"]) ? (a.status as PlanAction["status"]) : "未着手",
+    });
+  }
+  return out;
 }
 
 async function loadRow(db: Client, demoId: string) {
@@ -317,7 +338,7 @@ export async function updateAction(db: Client, demoId: string, body: Record<stri
     args: [JSON.stringify(actions), nowIso(), demoId, rev],
   });
   if (rs.rowsAffected !== 1) {
-    throw new ServiceError(409, "ほかの操作と重なりました。画面を読み込み直してください");
+    throw new ServiceError(409, MSG_CONFLICT);
   }
   return getActionPlanFrom(db, demoId);
 }

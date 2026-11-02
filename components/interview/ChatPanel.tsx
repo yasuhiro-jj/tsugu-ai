@@ -2,8 +2,13 @@
 
 import { useEffect, useId, useRef, type FormEvent, type KeyboardEvent } from "react";
 import type { ChatMessage } from "@/lib/interview-types";
+// サーバーの検証と同じ上限値を使う（lib/validation.ts は server-only ではなく、秘密情報も含まない）
+import { MESSAGE_MAX_CHARS } from "@/lib/validation";
 
-export const MAX_MESSAGE_LENGTH = 1000;
+/** 文字数の数え方はサーバー（lib/validation.ts）に合わせる：前後の空白を除き、絵文字なども1文字 */
+function countChars(text: string): number {
+  return Array.from(text.trim()).length;
+}
 
 type Props = {
   messages: ChatMessage[];
@@ -30,7 +35,7 @@ export default function ChatPanel({
   const endRef = useRef<HTMLDivElement>(null);
   const inputId = useId();
   const helpId = useId();
-  const remaining = MAX_MESSAGE_LENGTH - draft.length;
+  const remaining = MESSAGE_MAX_CHARS - countChars(draft);
   const inputDisabled = disabledReason !== null;
   const canSend = !inputDisabled && !thinking && draft.trim().length > 0 && remaining >= 0;
 
@@ -89,7 +94,7 @@ export default function ChatPanel({
           id={inputId}
           className="textarea chat__input"
           rows={4}
-          maxLength={MAX_MESSAGE_LENGTH}
+          maxLength={MESSAGE_MAX_CHARS}
           value={draft}
           onChange={(e) => onDraftChange(e.target.value)}
           onKeyDown={handleKeyDown}

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { DiagnosisRecord, FinancialSummary } from "@/lib/plan-types";
+// 型のみ import（ビルド時に消えるため、サーバー専用コードはクライアントに入らない）
+import type { Role } from "@/lib/role";
 import { asObject, postJson } from "@/components/post-json";
 import { formatDateTime } from "@/components/format";
 import { useElapsedSeconds } from "@/components/use-elapsed";
@@ -12,10 +14,12 @@ import FinancialTable from "./FinancialTable";
 type Props = {
   initialRecord: DiagnosisRecord | null;
   financial: FinancialSummary | null;
+  /** いまの役割（学習プランは後継者向けなので、先代には案内しない。表示の出し分けだけに使う） */
+  role: Role;
 };
 
 /** 比較画面の「認識差の診断」。POST /api/diagnosis で AI に整理してもらう */
-export default function DiagnosisSection({ initialRecord, financial }: Props) {
+export default function DiagnosisSection({ initialRecord, financial, role }: Props) {
   const [record, setRecord] = useState<DiagnosisRecord | null>(initialRecord);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,10 +107,12 @@ export default function DiagnosisSection({ initialRecord, financial }: Props) {
           </p>
           <DiagnosisView diagnosis={record.diagnosis} />
           <div className="button-row next-links">
-            <Link href="/learning" className="button">
-              学習プランへ
-            </Link>
-            <Link href="/plan" className="button button--secondary">
+            {role === "successor" && (
+              <Link href="/learning" className="button">
+                学習プランへ
+              </Link>
+            )}
+            <Link href="/plan" className={role === "successor" ? "button button--secondary" : "button"}>
               90日計画へ
             </Link>
           </div>

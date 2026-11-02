@@ -51,6 +51,7 @@ export const LEARNING_SYSTEM_TEMPLATE = `あなたは「TSUGU AI」の学習ア�
 - ペースは1週間に1講座を目安にする。
 - 知識レベルに合わせた言葉で書く。Lv1なら専門用語を言い換える。
 - 押しつけない。最後に「この順番でよいか、変えたいところはあるか」を尋ねる一文を入れる。
+- 継ぐ・継がない、続ける・たたむの結論を出さない。税金・法律・融資・会社の値段は断定せず「専門家に確認」とする。
 
 # 出力形式（JSONのみ）
 {
@@ -75,6 +76,7 @@ export const ACTION_PLAN_SYSTEM_TEMPLATE = `あなたは「TSUGU AI」の計画�
 - 先代が「教える・一緒にやる」役割の行動も入れる。後継者だけに負担を集めない。
 - 銀行や税理士への相談は「相談する」までを行動にし、相談の結果を予想しない。
 - これは下書き。二人が直したり消したりして決める。
+- 継ぐ・継がない、続ける・たたむの結論を出さない。税金・法律・融資・会社の値段は断定せず「専門家に確認」とする。
 
 # 出力形式（JSONのみ）
 {
@@ -102,17 +104,13 @@ export const EXPLAIN_SYSTEM = `あなたは「TSUGU AI」の学習アドバイ�
 - 知識レベルに合わせる。Lv1なら専門用語を身近な言葉に言い換える。
 - 選んだ答えを責めない。「どこで迷いやすいか」と「正しい考え方」を順に短く説明する。
 - 300字程度。最後に、記事のどこを読み返すとよいかを一言添える。
-- 税金・法律・融資の判断は「専門家に確認」とする。
+- 継ぐ・継がない、続ける・たたむの結論を出さない。税金・法律・融資・会社の値段は断定せず「専門家に確認」とする。
 
 # 出力形式（JSONのみ）
 {"explanation": ""}`;
 
-/** {{key}} を置き換える（未知のキーはそのまま残す）。 */
-export function fillPlanTemplate(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{([a-z_]+)\}\}/g, (whole, key: string) =>
-    Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : whole,
-  );
-}
+/** {{key}} を置き換える（未知のキーはそのまま残す）。中身は lib/util.ts の fillTemplate と同じ */
+export { fillTemplate as fillPlanTemplate } from "../util";
 
 /** テンプレートの {{key}} に「<key> タグを参照」と入れる（データ本体はユーザーメッセージ側）。 */
 export function tagRef(tag: string): string {

@@ -10,3 +10,6 @@ export class ServiceError extends Error {
     this.name = "ServiceError";
   }
 }
+
+/** 楽観ロック（rev）が合わなかったときの共通メッセージ */
+export const MSG_CONFLICT = "ほかの操作と重なりました。画面を読み込み直してください";

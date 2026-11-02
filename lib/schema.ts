@@ -69,6 +69,11 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 )`,
+  // 保存期間の削除などの定期処理の実行時刻（1処理1行。SEC-201：実行間隔の制限に使う。demo_id は持たない）
+  `CREATE TABLE IF NOT EXISTS maintenance (
+  key TEXT NOT NULL PRIMARY KEY,
+  last_run_at TEXT NOT NULL
+)`,
 ];
 
 /**

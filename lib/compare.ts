@@ -11,23 +11,7 @@ import type { Client } from "@libsql/client";
 import { THEMES, isThemeKey, type ThemeKey } from "./themes";
 import type { ComparisonRow, ThemeSummary } from "./interview-types";
 import { getDb } from "./db";
-
-function parseSharedSummary(raw: unknown): ThemeSummary | null {
-  if (typeof raw !== "string") return null;
-  try {
-    const v = JSON.parse(raw);
-    if (v === null || typeof v !== "object") return null;
-    const pick = (k: string): string[] =>
-      Array.isArray(v[k]) ? v[k].filter((x: unknown): x is string => typeof x === "string") : [];
-    return {
-      statements: pick("statements"),
-      ai_observations: pick("ai_observations"),
-      unconfirmed: pick("unconfirmed"),
-    };
-  } catch {
-    return null;
-  }
-}
+import { parseStoredSummary } from "./util";
 
 /** DB を指定して比較データを作る（テスト用にも使う）。 */
 export async function getComparisonFrom(db: Client, demoId: string): Promise<ComparisonRow[]> {
@@ -45,7 +29,7 @@ export async function getComparisonFrom(db: Client, demoId: string): Promise<Com
   const succ = new Map<ThemeKey, ThemeSummary>();
   for (const row of rs.rows) {
     if (!isThemeKey(row.theme_key)) continue;
-    const s = parseSharedSummary(row.summary);
+    const s = parseStoredSummary(row.summary);
     if (!s) continue;
     if (row.role === "predecessor") pred.set(row.theme_key, s);
     else if (row.role === "successor") succ.set(row.theme_key, s);

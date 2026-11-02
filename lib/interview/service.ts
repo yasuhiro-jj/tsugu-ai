@@ -1,3 +1,5 @@
+import "server-only";
+
 // AI 面談の進行ロジック（Next.js に依存しない。テストから DB と AI を差し替えて呼べる）。
 //
 // 守ること：
@@ -5,7 +7,13 @@
 // - Claude に渡すのは「今のテーマの会話すべて」＋「終わったテーマのうち本人が確定した要約」だけ
 //   （discarded の要約・相手の会話や要約・決算の具体的な数字は渡さない）
 // - テーマの移動はアプリが行う（本人が要約を確定／破棄した時点）
-// - AI の返事が壊れていたら同じ依頼を一度だけ再送。だめなら 502（入力文は保存しない）
+// - AI の返事が壊れていたら同じ依頼を一度だけ再送。一時的な失敗（接続エラー・429/5xx/529）も一度だけ再送
+//   （lib/ai/retry.ts。再送も reserveAiCall で数える）。だめなら 502（入力文は保存しない）
+// - 1回の利用者操作で AI に使う時間は INTERVIEW_AI_BUDGET_MS まで（Route の maxDuration 60 秒より短く）
+// - 1回の利用者操作あたりの AI 呼び出しは最大6回（SEC-204）：
+//   callAiWithRetry 1回あたり最大3回（初回＋一時エラーの再送1回＋壊れた返事の再送1回）×
+//   sendMessage の callAi 最大2回（通常の返事＋要約の依頼し直し）。startInterview は最大3回。
+//   どの回も reserveAiCall で数え、時間の予算が足りなければ予約せずに止める
 
 import type { Client } from "@libsql/client";
 import { THEMES, themeLabel, type ThemeKey } from "../themes";
@@ -39,7 +47,6 @@ import {
   deleteDemoData,
   ensureInterviewRows,
   loadRecords,
-  reserveAiCall,
   saveRecord,
   saveRecordStatement,
   MSG_CONFLICT,
@@ -47,15 +54,30 @@ import {
   type ThemeRecord,
 } from "./store";
 import { invalidateDiagnosisStatements } from "../plan-store";
+import { callAiWithRetry, realSleep } from "../ai/retry";
+import { dataBlock, extractJsonObject } from "../ai/json-ai";
 
 // ---- AI 呼び出しの差し替え口 ----
 
 export type AiMessage = { role: "user" | "assistant"; content: string };
 export type AiRequest = { system: string; messages: AiMessage[] };
-/** AI に依頼して、返ってきた文字列（JSON のはず）を返す。テストでは偽物に差し替える。 */
-export type InterviewAi = (req: AiRequest) => Promise<string>;
+/**
+ * AI に依頼して、返ってきた文字列（JSON のはず）を返す。テストでは偽物に差し替える。
+ * opts.timeoutMs はこの1回の待ち時間の上限（残り時間から service が渡す）。
+ */
+export type InterviewAi = (req: AiRequest, opts?: { timeoutMs?: number }) => Promise<string>;
 
-export type Deps = { db: Client; ai: InterviewAi };
+export type Deps = {
+  db: Client;
+  ai: InterviewAi;
+  /** テスト用の時計 */
+  now?: () => number;
+  /** テスト用の待ち（一時エラーの再送前の待ち時間） */
+  sleep?: (ms: number) => Promise<void>;
+};
+
+/** 1回の利用者操作（開始・送信）で AI に使ってよい時間。Route の maxDuration（60 秒）より短く */
+export const INTERVIEW_AI_BUDGET_MS = 50_000;
 
 export type AiAction = "followup" | "summarize" | "next_theme" | "finish";
 export type AiOutput = { reply: string; action: AiAction; summary: ThemeSummary };
@@ -152,7 +174,7 @@ export function buildInterviewRequest(params: {
   const confirmed = THEMES.filter((t) => {
     const r = records.get(t.key)!;
     return t.key !== themeKey && r.status === "confirmed" && r.summary !== null;
-  }).map((t) => `\n  - ${t.label}：${JSON.stringify(records.get(t.key)!.summary)}`);
+  }).map((t) => ({ theme: t.label, summary: records.get(t.key)!.summary }));
 
   const system = [
     fillTemplate(INTERVIEW_SYSTEM_TEMPLATE, {
@@ -169,7 +191,7 @@ export function buildInterviewRequest(params: {
     REPLY_EXAMPLES,
     buildAppNotes({
       followupCount: rec.followupCount,
-      confirmedSummaries: confirmed.length ? confirmed.join("") : "なし",
+      confirmedSummaries: dataBlock("confirmed_summaries", confirmed),
     }),
   ].join("\n\n");
 
@@ -184,22 +206,10 @@ export function buildInterviewRequest(params: {
   return { system, messages };
 }
 
-/** AI の返事（文字列）を JSON として読み、形を確かめる。だめなら null。 */
+/** AI の返事（文字列）を JSON として読み、形を確かめる。だめなら null。JSON の取り出しは JSON 系と共通。 */
 export function parseAiOutput(raw: string): AiOutput | null {
-  let text = raw.trim();
-  const fence = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
-  if (fence) text = fence[1];
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  let v: unknown;
-  try {
-    v = JSON.parse(text.slice(start, end + 1));
-  } catch {
-    return null;
-  }
-  if (v === null || typeof v !== "object") return null;
-  const o = v as Record<string, unknown>;
+  const o = extractJsonObject(raw);
+  if (!o) return null;
   if (typeof o.reply !== "string") return null;
   const reply = o.reply.trim();
   if (!reply || Array.from(reply).length > REPLY_MAX_CHARS) return null;
@@ -207,28 +217,30 @@ export function parseAiOutput(raw: string): AiOutput | null {
   return { reply, action: o.action as AiAction, summary: normalizeAiSummary(o.summary) };
 }
 
-/** AI を1回呼ぶ（回数を予約してから）。壊れた返事なら同じ依頼を一度だけ再送。 */
-async function callAi(deps: Deps, demoId: string, role: Role, req: AiRequest): Promise<AiOutput> {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    await reserveAiCall(deps.db, demoId, role);
-    let raw: string;
-    try {
-      raw = await deps.ai(req);
-    } catch (err) {
-      if (err instanceof ServiceError) throw err;
-      // SDK のエラーは name が "Error" のことがあるため、クラス名で種類を記録する
-      const name = err instanceof Error ? err.constructor?.name || err.name : "UnknownError";
-      const status =
-        err && typeof err === "object" && "status" in err ? String((err as { status: unknown }).status) : "-";
-      // 入力本文・SDK のエラー本文はログに出さない
-      console.error(JSON.stringify({ level: "error", where: "interview.ai", error: name, status }));
-      throw new ServiceError(502, MSG_AI_FAILED);
-    }
-    const parsed = parseAiOutput(raw);
-    if (parsed) return parsed;
-    console.warn(JSON.stringify({ level: "warn", where: "interview.ai", event: "invalid_json", attempt }));
-  }
-  throw new ServiceError(502, MSG_AI_FAILED);
+/**
+ * AI を呼ぶ（毎回、回数を予約してから）。壊れた返事・一時的な失敗のときはそれぞれ一度だけ再送。
+ * startedAt は利用者操作の開始時刻（同じ操作で2回呼ぶときも時間の予算を共有する）。
+ */
+async function callAi(
+  deps: Deps,
+  demoId: string,
+  role: Role,
+  req: AiRequest,
+  startedAt: number,
+): Promise<AiOutput> {
+  return callAiWithRetry({
+    db: deps.db,
+    demoId,
+    role,
+    where: "interview.ai",
+    budgetMs: INTERVIEW_AI_BUDGET_MS,
+    startedAt,
+    now: deps.now ?? Date.now,
+    sleep: deps.sleep ?? realSleep,
+    call: (timeoutMs) => deps.ai(req, { timeoutMs }),
+    parse: parseAiOutput,
+    failMessage: MSG_AI_FAILED,
+  });
 }
 
 async function loadForWrite(db: Client, demoId: string, role: Role) {
@@ -240,13 +252,14 @@ async function loadForWrite(db: Client, demoId: string, role: Role) {
 
 /** 今のテーマの会話が空なら、最初の問いかけを AI に作らせて保存する。 */
 export async function startInterview(deps: Deps, demoId: string, role: Role): Promise<InterviewState> {
+  const startedAt = (deps.now ?? Date.now)();
   const records = await loadForWrite(deps.db, demoId, role);
   const themeKey = currentThemeOf(records);
   if (themeKey === null) return toState(role, records);
   const rec = records.get(themeKey)!;
   if (rec.messages.length > 0 || rec.status !== "not_started") return toState(role, records);
 
-  const out = await callAi(deps, demoId, role, buildInterviewRequest({ role, records, themeKey }));
+  const out = await callAi(deps, demoId, role, buildInterviewRequest({ role, records, themeKey }), startedAt);
   const updated: ThemeRecord = {
     ...rec,
     messages: [{ from: "ai", text: out.reply }],
@@ -265,6 +278,7 @@ export async function sendMessage(
   role: Role,
   rawText: unknown,
 ): Promise<InterviewState> {
+  const startedAt = (deps.now ?? Date.now)();
   const text = validateMessageText(rawText);
   const records = await loadForWrite(deps.db, demoId, role);
   const themeKey = currentThemeOf(records);
@@ -282,7 +296,7 @@ export async function sendMessage(
   }
 
   const req = buildInterviewRequest({ role, records, themeKey, pendingUserText: text });
-  let out = await callAi(deps, demoId, role, req);
+  let out = await callAi(deps, demoId, role, req, startedAt);
 
   const wantsEnd = out.action !== "followup";
   const overLimit = out.action === "followup" && rec.followupCount >= FOLLOWUP_LIMIT;
@@ -296,7 +310,7 @@ export async function sendMessage(
         { role: "user", content: FORCE_SUMMARIZE_TEXT },
       ],
     };
-    out = await callAi(deps, demoId, role, retryReq);
+    out = await callAi(deps, demoId, role, retryReq, startedAt);
   }
 
   const messages: ChatMessage[] = [

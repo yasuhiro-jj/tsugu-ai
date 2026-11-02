@@ -12,8 +12,8 @@ export default function HomePage() {
           後継者の学びと90日の行動計画につなげる事業承継の対話支援サービスです。
         </p>
       </section>
-      <section className="card">
-        <h2>どちらの立場で利用しますか</h2>
+      <section className="card" id="role-select" aria-labelledby="role-select-title">
+        <h2 id="role-select-title">どちらの立場で利用しますか</h2>
         <p>デモでは、ボタンで先代・後継者の立場を切り替えて体験できます。</p>
         <RoleSwitcher />
       </section>
@@ -21,10 +21,12 @@ export default function HomePage() {
         <h2 id="flow-title">デモの流れ（架空の「食事処 つぐみ」）</h2>
         <ol className="demo-flow">
           <li>
-            <Link href="/interview">先代（森川 修さん）が AI 面談で答える</Link>
+            先代（森川 修さん）が AI 面談で答える
+            <span className="muted">（上の<a href="#role-select">「先代として入る」</a>から始めます）</span>
           </li>
           <li>
-            <Link href="/interview">後継者（森川 拓也さん）が AI 面談で答える</Link>
+            後継者（森川 拓也さん）が AI 面談で答える
+            <span className="muted">（上の<a href="#role-select">「後継者として入る」</a>に切り替えます）</span>
           </li>
           <li>
             <Link href="/compare">共有した回答だけで比べ、AI が「追加確認が必要な点」を整理する</Link>
@@ -40,7 +42,9 @@ export default function HomePage() {
       </section>
       <section className="card">
         <h2>デモをやり直す</h2>
-        <p>このブラウザで入力した面談の内容を消して、最初から体験し直せます。</p>
+        <p>
+          このブラウザで入力した面談・共有の設定・診断・学習プラン・90日計画のデータを消して、最初から体験し直せます。
+        </p>
         <ResetDemoButton />
       </section>
     </>
