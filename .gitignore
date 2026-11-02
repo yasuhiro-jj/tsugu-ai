@@ -32,3 +32,6 @@ npm-debug.log*
 # Claude Code のローカル設定
 .claude/settings.local.json
 CLAUDE.local.md
+
+.vercel
+.env*
