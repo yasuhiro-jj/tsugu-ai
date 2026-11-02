@@ -41,9 +41,12 @@ import {
   loadRecords,
   reserveAiCall,
   saveRecord,
+  saveRecordStatement,
+  MSG_CONFLICT,
   setCurrentTheme,
   type ThemeRecord,
 } from "./store";
+import { invalidateDiagnosisStatements } from "../plan-store";
 
 // ---- AI 呼び出しの差し替え口 ----
 
@@ -213,7 +216,8 @@ async function callAi(deps: Deps, demoId: string, role: Role, req: AiRequest): P
       raw = await deps.ai(req);
     } catch (err) {
       if (err instanceof ServiceError) throw err;
-      const name = err instanceof Error ? err.name : "UnknownError";
+      // SDK のエラーは name が "Error" のことがあるため、クラス名で種類を記録する
+      const name = err instanceof Error ? err.constructor?.name || err.name : "UnknownError";
       const status =
         err && typeof err === "object" && "status" in err ? String((err as { status: unknown }).status) : "-";
       // 入力本文・SDK のエラー本文はログに出さない
@@ -368,7 +372,16 @@ export async function setShared(
     throw new ServiceError(409, "確定した要約だけ共有を選べます");
   }
   const updated: ThemeRecord = { ...rec, shared };
-  await saveRecord(db, demoId, role, updated, rec.rev);
+  // 共有を取り消すときは、shared の保存と「診断と派生物（90日計画・診断を使った学習プラン）の削除」を
+  // 1つのトランザクション（db.batch）で行う。片方だけ成功して取り消した内容が派生物に残ることを防ぐ（SEC-101）
+  const stmts = [saveRecordStatement(demoId, role, updated, rec.rev)];
+  if (rec.shared === true && !shared) stmts.push(...invalidateDiagnosisStatements(demoId));
+  const results = await db.batch(stmts, "write");
+  if (results[0].rowsAffected !== 1) {
+    // rev が合わなかった（ほかの操作と重なった）。共有状態は変わっていない。
+    // 同じ batch の削除は実行済みだが、派生物を消す方向なので安全側（作り直せばよい）
+    throw new ServiceError(409, MSG_CONFLICT);
+  }
   records.set(themeKey, { ...updated, rev: rec.rev + 1 });
   return toState(role, records);
 }

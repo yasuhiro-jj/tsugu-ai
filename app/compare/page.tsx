@@ -3,7 +3,10 @@ import { getRole } from "@/lib/role";
 import { getDemoId } from "@/lib/demo";
 import { getComparison } from "@/lib/compare";
 import type { ComparisonRow } from "@/lib/interview-types";
+import type { DiagnosisRecord, FinancialSummary } from "@/lib/plan-types";
 import SummarySections, { SHARED_SUMMARY_LABELS } from "@/components/SummarySections";
+import DiagnosisSection from "@/components/diagnosis/DiagnosisSection";
+import { getDiagnosis, getFinancialSummary } from "@/components/server-data";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +45,26 @@ export default async function ComparePage() {
   }
 
   const visible = (rows ?? []).filter((r) => r.predecessor !== null || r.successor !== null);
+
+  // 認識差の診断（サーバーが共有済みの回答だけで作ったもの）とお店の数字（計算済み）
+  let diagnosis: DiagnosisRecord | null = null;
+  let financial: FinancialSummary | null = null;
+  if (rows !== null && visible.length > 0) {
+    try {
+      financial = await getFinancialSummary();
+    } catch {
+      financial = null;
+    }
+    if (demoId) {
+      try {
+        const rec = await getDiagnosis(demoId);
+        // 画面に不要な内部情報（診断に使ったテーマの key）はブラウザへ送らない
+        diagnosis = rec ? { ...rec, basedOnThemeKeys: [] } : null;
+      } catch {
+        diagnosis = null;
+      }
+    }
+  }
 
   return (
     <>
@@ -95,7 +118,9 @@ export default async function ComparePage() {
         ))
       )}
 
-      <p className="interview__footnote">認識差の診断（AI）は次の段階で追加されます。</p>
+      {rows !== null && visible.length > 0 && (
+        <DiagnosisSection initialRecord={diagnosis} financial={financial} />
+      )}
     </>
   );
 }

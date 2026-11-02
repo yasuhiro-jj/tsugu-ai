@@ -6,7 +6,7 @@ import "server-only";
 // - すべての SQL はプレースホルダ引数で値を渡す（文字列連結で条件を組み立てない）
 
 import { createClient, type Client } from "@libsql/client";
-import { SCHEMA_STATEMENTS } from "./schema";
+import { COLUMN_MIGRATIONS, SCHEMA_STATEMENTS } from "./schema";
 
 let client: Client | null = null;
 let schemaReady: Promise<void> | null = null;
@@ -26,12 +26,27 @@ function createDefaultClient(): Client {
   return createClient({ url: "file:local.db" });
 }
 
-/** スキーマ（CREATE TABLE IF NOT EXISTS）を流す。何度呼んでも安全。 */
+async function hasColumn(db: Client, table: string, column: string): Promise<boolean> {
+  // table は lib/schema.ts の定数だけ（利用者の入力は来ない）
+  const rs = await db.execute(`PRAGMA table_info(${table})`);
+  return rs.rows.some((r) => r.name === column);
+}
+
+/** スキーマ（CREATE TABLE IF NOT EXISTS ＋ 足りない列の追加）を流す。何度呼んでも安全。 */
 export async function applySchema(db: Client): Promise<void> {
   await db.batch(
     SCHEMA_STATEMENTS.map((sql) => ({ sql, args: [] })),
     "write",
   );
+  for (const m of COLUMN_MIGRATIONS) {
+    if (await hasColumn(db, m.table, m.column)) continue;
+    try {
+      await db.execute(m.ddl);
+    } catch (err) {
+      // 別のインスタンスが同時に追加した場合は成功扱い
+      if (!(await hasColumn(db, m.table, m.column))) throw err;
+    }
+  }
 }
 
 /** スキーマ適用済みの DB クライアントを返す（スキーマはプロセス内で1回だけ流す）。 */

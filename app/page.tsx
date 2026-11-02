@@ -1,3 +1,4 @@
+import Link from "next/link";
 import RoleSwitcher from "@/components/RoleSwitcher";
 import ResetDemoButton from "@/components/ResetDemoButton";
 
@@ -15,6 +16,27 @@ export default function HomePage() {
         <h2>どちらの立場で利用しますか</h2>
         <p>デモでは、ボタンで先代・後継者の立場を切り替えて体験できます。</p>
         <RoleSwitcher />
+      </section>
+      <section className="card" aria-labelledby="flow-title">
+        <h2 id="flow-title">デモの流れ（架空の「食事処 つぐみ」）</h2>
+        <ol className="demo-flow">
+          <li>
+            <Link href="/interview">先代（森川 修さん）が AI 面談で答える</Link>
+          </li>
+          <li>
+            <Link href="/interview">後継者（森川 拓也さん）が AI 面談で答える</Link>
+          </li>
+          <li>
+            <Link href="/compare">共有した回答だけで比べ、AI が「追加確認が必要な点」を整理する</Link>
+          </li>
+          <li>
+            <Link href="/learning">診断を受けて、後継者の学習プランが変わる</Link>
+          </li>
+          <li>
+            <Link href="/plan">90日行動計画ができる</Link>
+          </li>
+        </ol>
+        <p className="muted">役割は上のボタンでいつでも切り替えられます。</p>
       </section>
       <section className="card">
         <h2>デモをやり直す</h2>

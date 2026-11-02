@@ -1,0 +1,117 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import type { DiagnosisRecord, FinancialSummary } from "@/lib/plan-types";
+import { asObject, postJson } from "@/components/post-json";
+import { formatDateTime } from "@/components/format";
+import { useElapsedSeconds } from "@/components/use-elapsed";
+import DiagnosisView from "./DiagnosisView";
+import FinancialTable from "./FinancialTable";
+
+type Props = {
+  initialRecord: DiagnosisRecord | null;
+  financial: FinancialSummary | null;
+};
+
+/** 比較画面の「認識差の診断」。POST /api/diagnosis で AI に整理してもらう */
+export default function DiagnosisSection({ initialRecord, financial }: Props) {
+  const [record, setRecord] = useState<DiagnosisRecord | null>(initialRecord);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const seconds = useElapsedSeconds(pending);
+  const resultRef = useRef<HTMLHeadingElement>(null);
+  const focusResult = useRef(false);
+
+  useEffect(() => {
+    if (focusResult.current && record) {
+      focusResult.current = false;
+      resultRef.current?.focus();
+    }
+  }, [record]);
+
+  async function run() {
+    if (pending) return; // 二重押し防止
+    setPending(true);
+    setError(null);
+    const r = await postJson<DiagnosisRecord | null>("/api/diagnosis", {}, (d) =>
+      d.record === null ? null : asObject<DiagnosisRecord>(d.record),
+    );
+    setPending(false);
+    if (!r.ok) {
+      setError(r.error);
+      return;
+    }
+    if (r.data === null) {
+      setError("診断を作れませんでした。時間をおいて、もう一度お試しください。");
+      return;
+    }
+    focusResult.current = true;
+    setRecord(r.data);
+  }
+
+  return (
+    <section className="card diagnosis-card" aria-labelledby="diagnosis-title">
+      <h2 id="diagnosis-title">認識差の診断</h2>
+      <p>
+        お二人が共有した回答とお店の数字だけを使って、AI が「共通点」と「追加確認が必要な点」を整理します。
+      </p>
+
+      {financial && <FinancialTable summary={financial} />}
+
+      <div className="button-row diagnosis-card__action">
+        <button
+          type="button"
+          className="button"
+          onClick={() => void run()}
+          disabled={pending}
+          aria-busy={pending}
+        >
+          {pending ? "AIが整理しています…" : record ? "もう一度整理する" : "AIに認識差を整理してもらう"}
+        </button>
+      </div>
+
+      <div role="status" aria-live="polite" className="progress-note">
+        {pending && (
+          <>
+            <span className="spinner" aria-hidden="true" />
+            AIが整理しています。数十秒かかることがあります（{seconds}秒経過）。このままお待ちください。
+          </>
+        )}
+      </div>
+
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+
+      {record && (
+        <div className="diagnosis-result">
+          <h3 ref={resultRef} tabIndex={-1} className="diagnosis-result__title">
+            診断の結果
+            {formatDateTime(record.createdAt) && (
+              <span className="diagnosis-result__time">
+                （{formatDateTime(record.createdAt)} 作成）
+              </span>
+            )}
+          </h3>
+          <p className="ai-note" role="note">
+            AIによる下書きです。内容を確認してから使ってください。
+            <br />
+            継ぐ・継がない、税務・融資などの判断は、お二人と専門家で行ってください。
+          </p>
+          <DiagnosisView diagnosis={record.diagnosis} />
+          <div className="button-row next-links">
+            <Link href="/learning" className="button">
+              学習プランへ
+            </Link>
+            <Link href="/plan" className="button button--secondary">
+              90日計画へ
+            </Link>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}

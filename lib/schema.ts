@@ -35,4 +35,51 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
   day TEXT NOT NULL PRIMARY KEY,
   calls INTEGER NOT NULL DEFAULT 0
 )`,
+  `CREATE TABLE IF NOT EXISTS diagnoses (
+  demo_id TEXT NOT NULL PRIMARY KEY,
+  diagnosis TEXT NOT NULL,
+  based_on TEXT NOT NULL,
+  created_at TEXT NOT NULL
+)`,
+  `CREATE TABLE IF NOT EXISTS learning (
+  demo_id TEXT NOT NULL PRIMARY KEY,
+  level TEXT NOT NULL CHECK (level IN ('Lv1', 'Lv2', 'Lv3', 'Lv4')),
+  wants TEXT NOT NULL,
+  current_plan TEXT,
+  previous_plan TEXT,
+  rev INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+)`,
+  `CREATE TABLE IF NOT EXISTS course_progress (
+  demo_id TEXT NOT NULL,
+  course_id TEXT NOT NULL CHECK (course_id IN ('cashflow', 'costrate', 'trialbalance')),
+  status TEXT NOT NULL CHECK (status IN ('未着手', '学習中', '完了', '復習をおすすめ')),
+  score INTEGER,
+  wrong_article_nos TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (demo_id, course_id)
+)`,
+  `CREATE TABLE IF NOT EXISTS action_plans (
+  demo_id TEXT NOT NULL PRIMARY KEY,
+  start_date TEXT NOT NULL,
+  actions TEXT NOT NULL,
+  message TEXT,
+  diagnosis_created_at TEXT,
+  rev INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)`,
+];
+
+/**
+ * 既にあるテーブルへの列の追加（CREATE TABLE IF NOT EXISTS では列が増えないため）。
+ * applySchema が PRAGMA table_info で列の有無を確かめ、無いときだけ ALTER TABLE を流す。
+ */
+export const COLUMN_MIGRATIONS: readonly { table: string; column: string; ddl: string }[] = [
+  {
+    // SEC-102：90日計画を作ったときに使った診断の createdAt
+    table: "action_plans",
+    column: "diagnosis_created_at",
+    ddl: "ALTER TABLE action_plans ADD COLUMN diagnosis_created_at TEXT",
+  },
 ];

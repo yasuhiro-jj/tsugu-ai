@@ -7,6 +7,7 @@ import { THEMES, isThemeKey, type ThemeKey } from "../themes";
 import type { ChatMessage, ThemeStatus, ThemeSummary } from "../interview-types";
 import type { Role } from "../role";
 import { ServiceError } from "../errors";
+import { deletePlanDataStatements } from "../plan-store";
 
 export type ThemeRecord = {
   themeKey: ThemeKey;
@@ -133,14 +134,14 @@ export async function ensureInterviewRows(db: Client, demoId: string, role: Role
  * テーマの行を更新する（楽観ロック：読んだときの rev と一致するときだけ書く）。
  * 同時に別の操作が書いていたら 409。
  */
-export async function saveRecord(
-  db: Client,
+/** saveRecord の UPDATE 文（db.batch にほかの文と一緒に入れるため）。実行後 rowsAffected が 1 でなければ 409。 */
+export function saveRecordStatement(
   demoId: string,
   role: Role,
   rec: ThemeRecord,
   expectedRev: number,
-): Promise<void> {
-  const rs = await db.execute({
+): { sql: string; args: (string | number | null)[] } {
+  return {
     sql: `UPDATE theme_records
           SET messages = ?, followup_count = ?, status = ?, summary = ?, shared = ?, rev = rev + 1, updated_at = ?
           WHERE demo_id = ? AND role = ? AND theme_key = ? AND rev = ?`,
@@ -156,9 +157,21 @@ export async function saveRecord(
       rec.themeKey,
       expectedRev,
     ],
-  });
+  };
+}
+
+export const MSG_CONFLICT = "ほかの操作と重なりました。画面を読み込み直してください";
+
+export async function saveRecord(
+  db: Client,
+  demoId: string,
+  role: Role,
+  rec: ThemeRecord,
+  expectedRev: number,
+): Promise<void> {
+  const rs = await db.execute(saveRecordStatement(demoId, role, rec, expectedRev));
   if (rs.rowsAffected !== 1) {
-    throw new ServiceError(409, "ほかの操作と重なりました。画面を読み込み直してください");
+    throw new ServiceError(409, MSG_CONFLICT);
   }
 }
 
@@ -174,12 +187,16 @@ export async function setCurrentTheme(
   });
 }
 
-/** その demo_id の面談データ（両方の役割）を全部消す。AI 呼び出し回数の記録は消さない。 */
+/**
+ * その demo_id のデータ（両方の役割の面談・診断・学習・講座の進み具合・90日計画）を全部消す。
+ * AI 呼び出し回数の記録は消さない。
+ */
 export async function deleteDemoData(db: Client, demoId: string): Promise<void> {
   await db.batch(
     [
       { sql: `DELETE FROM theme_records WHERE demo_id = ?`, args: [demoId] },
       { sql: `DELETE FROM interviews WHERE demo_id = ?`, args: [demoId] },
+      ...deletePlanDataStatements(demoId),
     ],
     "write",
   );
