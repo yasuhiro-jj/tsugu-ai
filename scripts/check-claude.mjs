@@ -6,7 +6,7 @@
 import Anthropic, { APIError } from "@anthropic-ai/sdk";
 
 // lib/config.ts の DEFAULT_CLAUDE_MODEL と同じ値（.mjs から .ts を直接 import できないため）。
-const DEFAULT_CLAUDE_MODEL = "claude-sonnet-5-5";
+const DEFAULT_CLAUDE_MODEL = "claude-opus-5-5";
 
 const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
 const model = process.env.CLAUDE_MODEL?.trim() || DEFAULT_CLAUDE_MODEL;
