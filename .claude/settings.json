@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push*--force*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean*)",
+      "Bash(git rebase*)",
+      "Bash(git commit --amend*)",
+      "Bash(git filter-branch*)",
+      "Bash(git branch -D*)",
+      "Bash(vercel --prod*)",
+      "Bash(npx vercel --prod*)",
+      "Bash(vercel env*)",
+      "Bash(npx vercel env*)",
+      "Bash(vercel remove*)",
+      "Bash(vercel rm*)",
+      "Bash(supabase db reset*)",
+      "Bash(npx supabase db reset*)",
+      "Bash(terraform*)",
+      "Bash(rm -rf*)",
+      "Bash(rm -fr*)",
+      "Bash(Remove-Item*-Recurse*)",
+      "Bash(rd /s*)",
+      "Bash(rmdir /s*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.dev.vars)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/secrets/**)",
+      "Bash(cat *.env*)",
+      "Bash(type *.env*)",
+      "Bash(Get-Content*.env*)"
+    ]
+  }
+}
