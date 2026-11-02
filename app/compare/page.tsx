@@ -89,37 +89,68 @@ export default async function ComparePage() {
           </p>
         </section>
       ) : (
-        visible.map((row) => (
-          <section key={row.key} className="card compare-row" aria-labelledby={`compare-${row.key}`}>
-            <h2 id={`compare-${row.key}`}>{row.label}</h2>
-            <div className="compare-row__cols">
-              {row.predecessor && (
-                <div className="compare-col compare-col--predecessor">
-                  <h3 className="compare-col__title">先代から共有されたこと</h3>
-                  <SummarySections
-                    summary={row.predecessor}
-                    labels={SHARED_SUMMARY_LABELS}
-                    headingLevel={4}
-                  />
-                </div>
-              )}
-              {row.successor && (
-                <div className="compare-col compare-col--successor">
-                  <h3 className="compare-col__title">後継者から共有されたこと</h3>
-                  <SummarySections
-                    summary={row.successor}
-                    labels={SHARED_SUMMARY_LABELS}
-                    headingLevel={4}
-                  />
-                </div>
-              )}
-            </div>
-          </section>
-        ))
-      )}
+        <>
+          <nav className="page-jump" aria-label="このページの中">
+            <ul>
+              <li>
+                <a href="#diagnosis-title">{diagnosis ? "診断結果を見る" : "認識差を診断する"}</a>
+              </li>
+              <li>
+                <a href="#shared-title">共有された内容（{visible.length}テーマ）</a>
+              </li>
+            </ul>
+          </nav>
 
-      {rows !== null && visible.length > 0 && (
-        <DiagnosisSection initialRecord={diagnosis} financial={financial} role={role} />
+          {/* デモの見せ場。共有済み要約より上に置く */}
+          <DiagnosisSection initialRecord={diagnosis} financial={financial} role={role} />
+
+          <section className="card compare-shared" aria-labelledby="shared-title">
+            <h2 id="shared-title">共有された内容（テーマ別）</h2>
+            <p className="muted compare-shared__help">テーマ名を押すと、共有された要約が開きます。</p>
+            <ul className="compare-list">
+              {visible.map((row) => (
+                <li key={row.key} className="compare-list__item">
+                  <details className="compare-row">
+                    <summary className="compare-row__summary">
+                      <span className="compare-row__theme">{row.label}</span>
+                      {/* 共有がある側だけ表示する（無い側については何も書かない） */}
+                      <span className="compare-row__badges">
+                        {row.predecessor && (
+                          <span className="share-badge share-badge--predecessor">先代から共有</span>
+                        )}
+                        {row.successor && (
+                          <span className="share-badge share-badge--successor">後継者から共有</span>
+                        )}
+                      </span>
+                    </summary>
+                    <div className="compare-row__cols">
+                      {row.predecessor && (
+                        <div className="compare-col compare-col--predecessor">
+                          <h3 className="compare-col__title">先代から共有されたこと</h3>
+                          <SummarySections
+                            summary={row.predecessor}
+                            labels={SHARED_SUMMARY_LABELS}
+                            headingLevel={4}
+                          />
+                        </div>
+                      )}
+                      {row.successor && (
+                        <div className="compare-col compare-col--successor">
+                          <h3 className="compare-col__title">後継者から共有されたこと</h3>
+                          <SummarySections
+                            summary={row.successor}
+                            labels={SHARED_SUMMARY_LABELS}
+                            headingLevel={4}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
       )}
     </>
   );

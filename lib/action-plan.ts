@@ -262,7 +262,7 @@ export async function createActionPlan(
       start_date: startDate,
     }),
     DATA_NOTE,
-    `# アプリからの補足\n- due は開始日（${startDate}）を1日目として、phase の範囲内の日付にしてください（1-30：${phaseRange(startDate, "1-30").from}〜${phaseRange(startDate, "1-30").to}、31-60：${phaseRange(startDate, "31-60").from}〜${phaseRange(startDate, "31-60").to}、61-90：${phaseRange(startDate, "61-90").from}〜${phaseRange(startDate, "61-90").to}）。`,
+    `# アプリからの補足\n- due は開始日（${startDate}）を1日目として、phase の範囲内の日付にしてください（1-30：${phaseRange(startDate, "1-30").from}〜${phaseRange(startDate, "1-30").to}、31-60：${phaseRange(startDate, "31-60").from}〜${phaseRange(startDate, "31-60").to}、61-90：${phaseRange(startDate, "61-90").from}〜${phaseRange(startDate, "61-90").to}）。\n- 期限は画面の「期限」欄に表示されるので、title には日付を書かない（「誰が・何を」を書き、「いつまでに」は due で表す）。`,
   ].join("\n\n");
   const blocks = ["次の入力をもとに、出力形式どおりの JSON だけを返してください。", dataBlock("diagnosis", diag.diagnosis)];
   if (learningPlan) blocks.push(dataBlock("learning_plan", learningPlan));

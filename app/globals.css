@@ -135,7 +135,8 @@ h3 {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 20px;
-  margin: 0;
+  /* .container と同じ幅・左位置にそろえる（margin: 0 だと中央寄せが消えて左端に寄る） */
+  margin: 0 auto;
   padding: 8px 16px;
   list-style: none;
 }
@@ -814,6 +815,122 @@ summary:focus-visible,
 .compare-col__title {
   margin: 0 0 8px;
   font-size: 1.05rem;
+}
+
+/* ページ内リンク（比較画面の上部） */
+.page-jump ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.page-jump a {
+  display: inline-block;
+  padding: 6px 14px;
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  background: var(--color-surface);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.page-jump li:first-child a {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.page-jump a:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+#diagnosis-title,
+#shared-title {
+  scroll-margin-top: 16px;
+}
+
+/* 共有された内容（テーマごとに開閉） */
+.compare-shared__help {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+}
+
+.compare-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.compare-list__item {
+  border-top: 1px solid var(--color-border);
+}
+
+.compare-list__item:last-child {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.compare-row__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-height: 48px;
+  padding: 10px 4px;
+  cursor: pointer;
+}
+
+.compare-row__theme {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--color-primary);
+}
+
+.compare-row__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.share-badge {
+  display: inline-block;
+  padding: 1px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: 0.8rem;
+}
+
+.share-badge--predecessor {
+  border-color: var(--color-primary);
+}
+
+.share-badge--successor {
+  border-color: var(--color-accent);
+}
+
+.compare-row[open] > .compare-row__cols {
+  padding: 4px 0 16px;
+}
+
+/* お店の数字：残りの項目を畳む */
+.financial-more {
+  margin-top: 8px;
+}
+
+.financial-more > summary {
+  cursor: pointer;
+  color: var(--color-primary);
+  font-weight: 600;
+  padding: 6px 0;
+}
+
+.financial-more > .table-scroll {
+  margin-top: 4px;
 }
 
 @media (max-width: 480px) {

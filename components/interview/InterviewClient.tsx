@@ -27,7 +27,8 @@ export default function InterviewClient() {
   const [draft, setDraft] = useState("");
   const [pendingText, setPendingText] = useState<string | null>(null);
   const [shareSavingKey, setShareSavingKey] = useState<ThemeKey | null>(null);
-  const [resumeLabel, setResumeLabel] = useState<string | null>(null);
+  // ページを開いた時点で既に会話があったときだけ「続きから再開」を出す（この画面内で開始した直後は出さない）
+  const [resume, setResume] = useState<{ key: ThemeKey; label: string } | null>(null);
 
   const loadedRef = useRef(false);
   const startedRef = useRef<Set<ThemeKey>>(new Set());
@@ -42,9 +43,12 @@ export default function InterviewClient() {
       return;
     }
     const s = r.state;
-    if (s.currentThemeKey && s.messages.length > 0) {
+    // この画面内で start を呼んだ後の再読み込みでは出さない
+    if (startedRef.current.size === 0 && s.currentThemeKey && s.messages.length > 0) {
       const label = s.themes.find((t) => t.key === s.currentThemeKey)?.label ?? themeLabel(s.currentThemeKey);
-      setResumeLabel(label);
+      setResume({ key: s.currentThemeKey, label });
+    } else {
+      setResume(null);
     }
     setState(s);
     setLoadStatus("ready");
@@ -98,6 +102,7 @@ export default function InterviewClient() {
     if (!text || action !== null) return;
     setPendingText(text);
     setDraft("");
+    setResume(null); // 話し始めたら「再開」の案内は役目を終える
     const ok = await run("message", () => interviewApi.message(text));
     setPendingText(null);
     // 失敗したときは入力した文章を元に戻す（消さない）
@@ -166,9 +171,9 @@ export default function InterviewClient() {
         {currentLabel && !state.finished && <>（いまのテーマ：{currentLabel}）</>}
       </p>
 
-      {resumeLabel && (
+      {resume && resume.key === state.currentThemeKey && !state.finished && (
         <p className="resume-note" role="status">
-          前回は『{resumeLabel}』まで話しました。続きから始めます。
+          『{resume.label}』の続きから再開します。
         </p>
       )}
 

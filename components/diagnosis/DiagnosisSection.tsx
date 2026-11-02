@@ -61,8 +61,6 @@ export default function DiagnosisSection({ initialRecord, financial, role }: Pro
         お二人が共有した回答とお店の数字だけを使って、AI が「共通点」と「追加確認が必要な点」を整理します。
       </p>
 
-      {financial && <FinancialTable summary={financial} />}
-
       <div className="button-row diagnosis-card__action">
         <button
           type="button"
@@ -118,6 +116,9 @@ export default function DiagnosisSection({ initialRecord, financial, role }: Pro
           </div>
         </div>
       )}
+
+      {/* 診断の操作と結果を先に見せ、根拠の数字はその下に置く */}
+      {financial && <FinancialTable summary={financial} />}
     </section>
   );
 }
