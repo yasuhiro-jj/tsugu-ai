@@ -8,7 +8,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "check:claude": "node --env-file=.env.local scripts/check-claude.mjs",
-    "check:db": "node --env-file=.env.local scripts/check-db.mjs"
+    "check:db": "node --env-file=.env.local scripts/check-db.mjs",
+    "test": "vitest run"
   },
   "engines": {
     "node": ">=20.9"
@@ -25,6 +26,7 @@
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
   }
 }

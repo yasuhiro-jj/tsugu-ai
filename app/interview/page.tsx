@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getRole } from "@/lib/role";
-import PlaceholderCard from "@/components/PlaceholderCard";
+import InterviewClient from "@/components/interview/InterviewClient";
+
+export const dynamic = "force-dynamic";
 
 export default async function InterviewPage() {
   const role = await getRole();
@@ -10,7 +12,7 @@ export default async function InterviewPage() {
       <h1 className="page-title">AI面談</h1>
       <p className="lead">
         AI の質問に答えながら、事業や承継についての考えを整理します。
-        回答ごとに、相手と共有するかどうかを選べます。
+        テーマごとにまとめを確認し、相手と共有するかどうかを選べます。
       </p>
       {role === null ? (
         <section className="card notice" role="status">
@@ -23,7 +25,8 @@ export default async function InterviewPage() {
           </p>
         </section>
       ) : (
-        <PlaceholderCard title="AI面談" />
+        // 役割が変わったら状態を作り直す
+        <InterviewClient key={role} />
       )}
     </>
   );

@@ -3,13 +3,22 @@
 // Claude API を1回だけ呼ぶ（少額の利用料が発生する）。
 // API キーの値は絶対に表示しない。
 
+import { readFileSync } from "node:fs";
 import Anthropic, { APIError } from "@anthropic-ai/sdk";
 
-// lib/config.ts の DEFAULT_CLAUDE_MODEL と同じ値（.mjs から .ts を直接 import できないため）。
-const DEFAULT_CLAUDE_MODEL = "claude-opus-5-5";
+// モデルの既定値は lib/config.ts の DEFAULT_CLAUDE_MODEL だけを正とする（.mjs から .ts を import できないため、文字列として読む）。
+function readDefaultModel() {
+  const src = readFileSync(new URL("../lib/config.ts", import.meta.url), "utf8");
+  const m = src.match(/export const DEFAULT_CLAUDE_MODEL\s*=\s*"([^"]+)"/);
+  if (!m) {
+    console.error("lib/config.ts から DEFAULT_CLAUDE_MODEL を読めませんでした");
+    process.exit(1);
+  }
+  return m[1];
+}
 
 const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-const model = process.env.CLAUDE_MODEL?.trim() || DEFAULT_CLAUDE_MODEL;
+const model = process.env.CLAUDE_MODEL?.trim() || readDefaultModel();
 
 if (!apiKey) {
   console.error(".env.local に ANTHROPIC_API_KEY を入力してください");
