@@ -35,3 +35,6 @@ CLAUDE.local.md
 
 .vercel
 .env*
+
+# 画面確認用スクリプトの出力
+screenshots/
