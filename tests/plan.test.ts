@@ -249,11 +249,18 @@ describe("診断（SEC-003：共有済みだけを AI へ）", () => {
     const rows = await db.execute({ sql: `SELECT * FROM learning WHERE demo_id = ?`, args: [DEMO_A] });
     expect(JSON.stringify(rows.rows)).not.toContain("cashflow");
 
-    // やり直すと、取り消した内容は AI 入力に入らない（先代の共有が policy だけになる）
+    // やり直すと、取り消した内容は AI 入力に入らない。先代の共有が policy だけになり、
+    // 二人とも共有したテーマが無くなるので診断できない（オーナー決定 2026-11-03：診断は二人とも共有したテーマだけ）
     const ai = fakeAi([DIAG]);
-    const rec = await runDiagnosis({ db, ai }, DEMO_A, "predecessor");
-    expect(allText(ai)).not.toContain("PRED-SHARED-OK");
-    expect(rec.basedOnThemeKeys).toEqual(["policy", "people", "cashflow"]);
+    await expect(runDiagnosis({ db, ai }, DEMO_A, "predecessor")).rejects.toMatchObject({ status: 409 });
+    expect(ai.requests).toHaveLength(0);
+    // 先代も people を共有すれば、二人とも共有した people だけで診断する
+    await db.execute({ sql: `DELETE FROM theme_records WHERE demo_id = ? AND role = 'predecessor' AND theme_key = 'people'`, args: [DEMO_A] }); // setShared が作った未着手の行
+    await putTheme(DEMO_A, "predecessor", "people", "p3");
+    const ai2 = fakeAi([DIAG]);
+    const rec = await runDiagnosis({ db, ai: ai2 }, DEMO_A, "predecessor");
+    expect(allText(ai2)).not.toContain("PRED-SHARED-OK");
+    expect(rec.basedOnThemeKeys).toEqual(["people"]);
   });
 
   it("DB 上で共有が外れていたら（取り消しの通知が無くても）getDiagnosis は null を返す", async () => {

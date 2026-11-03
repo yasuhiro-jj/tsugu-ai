@@ -23,7 +23,7 @@ import { arr, callJsonAi, dataBlock, DATA_NOTE, obj, str, type AiDeps, type Json
 import { invalidateDiagnosis, nowIso } from "./plan-store";
 import type { Role } from "./role";
 
-export const MSG_NEED_BOTH_SHARED = "先代・後継者の両方が共有した要約がそろうと診断できます";
+export const MSG_NEED_BOTH_SHARED = "先代・後継者の二人とも共有したテーマが1つ以上そろうと診断できます";
 
 export const DIAGNOSIS_MAX_TOKENS = 4000;
 const TEXT_MAX = 400;
@@ -117,7 +117,8 @@ function summaryForPrompt(s: ThemeSummary) {
  * 比較結果（共有済みだけ）から AI への依頼を組み立てる。
  * rows は getComparisonFrom の戻り値だけを渡すこと（非共有のテーマは null になっている）。
  */
-export function buildDiagnosisRequest(rows: ComparisonRow[]): JsonAiRequest {
+export function buildDiagnosisRequest(allRows: ComparisonRow[]): JsonAiRequest {
+  const rows = bothSharedRows(allRows);
   const senior = rows
     .filter((r) => r.predecessor !== null)
     .map((r) => ({ テーマ: r.label, 要約: summaryForPrompt(r.predecessor!) }));
@@ -243,6 +244,14 @@ export function parseDiagnosis(v: Record<string, unknown>): Diagnosis | null {
 
 // ---- 保存・取得 ----
 
+/**
+ * 診断の材料は「二人とも共有したテーマ」だけ（オーナー決定 2026-11-03：CLAUDE.md「双方が共有を許可した回答だけで比較」）。
+ * 片方だけが共有したテーマは比較画面には出るが、診断・方向性・学習プラン・90日計画の材料にはしない。
+ */
+export function bothSharedRows(rows: ComparisonRow[]): ComparisonRow[] {
+  return rows.filter((r) => r.predecessor !== null && r.successor !== null);
+}
+
 function sharedKeys(rows: ComparisonRow[]): BasedOn {
   return {
     predecessor: rows.filter((r) => r.predecessor !== null).map((r) => r.key),
@@ -307,7 +316,7 @@ export async function getDiagnosisFrom(db: Client, demoId: string): Promise<Diag
 
 /** 診断を作り直す（最新1件だけ保存）。 */
 export async function runDiagnosis(deps: AiDeps, demoId: string, role: Role): Promise<DiagnosisRecord> {
-  const rows = await getComparisonFrom(deps.db, demoId);
+  const rows = bothSharedRows(await getComparisonFrom(deps.db, demoId));
   const basedOn = sharedKeys(rows);
   if (basedOn.predecessor.length === 0 || basedOn.successor.length === 0) {
     throw new ServiceError(409, MSG_NEED_BOTH_SHARED);

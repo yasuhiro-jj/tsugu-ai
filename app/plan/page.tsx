@@ -52,7 +52,8 @@ export default async function PlanPage() {
       <h1 className="page-title">90日行動計画</h1>
       <p className="lead">
         認識差の診断と学習プランをもとに、これからの90日で先代と後継者が取り組むことをまとめます。
-        どちらの立場からも、行動ごとの担当・期限・状態を変えられます。
+        どちらの立場からも、行動ごとの担当・期限・状態・文を変えられます。
+        <strong>この計画の文は、先代・後継者の両方に見えます。</strong>自分だけの考えは書かないでください。
       </p>
       {state ? (
         <PlanClient initialState={state} today={todayInJapan()} courseTitles={courseTitles} />

@@ -208,3 +208,32 @@ describe("共有していないテーマの内容は directions の材料に入�
     expect(planInput).not.toContain("suppliers");
   });
 });
+
+describe("診断の材料は二人とも共有したテーマだけ（オーナー決定 2026-11-03）", () => {
+  it("片方だけが共有したテーマは、診断の AI 入力にも based_on にも入らない", async () => {
+    await putTheme("predecessor", "cashflow", "P-BOTH");
+    await putTheme("successor", "cashflow", "S-BOTH");
+    await putTheme("predecessor", "policy", "ONE-SIDED-P"); // 後継者は未回答
+    await putTheme("successor", "people", "ONE-SIDED-S", 1);
+    await putTheme("predecessor", "people", "PRIV-P", 0); // 先代は共有しない
+    const ai = fakeAi([diag(DIRECTIONS)]);
+    const rec = await runDiagnosis({ db, ai }, DEMO_A, "successor");
+    const input = JSON.stringify(ai.requests);
+    expect(input).toContain("発言-P-BOTH");
+    expect(input).toContain("発言-S-BOTH");
+    expect(input).not.toContain("ONE-SIDED");
+    expect(input).not.toContain("PRIV-P");
+    expect(rec.basedOnThemeKeys).toEqual(["cashflow"]);
+    // 片方だけ共有のテーマの共有を取り消しても、診断は消えない（材料に使っていないため）
+    await db.execute({ sql: `UPDATE theme_records SET shared = 0 WHERE role = 'predecessor' AND theme_key = 'policy'`, args: [] });
+    expect(await getDiagnosisFrom(db, DEMO_A)).not.toBeNull();
+  });
+
+  it("二人とも共有したテーマが無ければ 409 で、AI を呼ばない", async () => {
+    await putTheme("predecessor", "policy", "A");
+    await putTheme("successor", "people", "B");
+    const ai = fakeAi([diag(DIRECTIONS)]);
+    await expect(runDiagnosis({ db, ai }, DEMO_A, "predecessor")).rejects.toMatchObject({ status: 409 });
+    expect(ai.requests).toHaveLength(0);
+  });
+});

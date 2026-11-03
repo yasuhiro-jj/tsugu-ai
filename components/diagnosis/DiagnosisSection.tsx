@@ -59,7 +59,7 @@ export default function DiagnosisSection({ initialRecord, financial, role }: Pro
     <section className="card diagnosis-card" aria-labelledby="diagnosis-title">
       <h2 id="diagnosis-title">認識差の診断</h2>
       <p>
-        お二人が共有した回答とお店の数字だけを使って、AI が「共通点」と「追加確認が必要な点」を整理します。
+        お二人とも共有したテーマの回答とお店の数字だけを使って、AI が「共通点」と「追加確認が必要な点」を整理します。片方だけが共有したテーマは、上の一覧には出ますが診断には使いません。
       </p>
 
       <div className="button-row diagnosis-card__action">
