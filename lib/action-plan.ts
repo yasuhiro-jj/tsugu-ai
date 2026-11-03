@@ -245,6 +245,7 @@ export async function createActionPlan(
   const titles = new Map(getCourses().map((c) => [c.id, c.title]));
   // 学習プランは「講座（course_id とタイトル）・順番・週」だけを渡す。reason・linked_gap・message・wants は渡さない
   // （後継者の希望や学習の理由が、先代も見る90日計画へ流れないため。SEC-104）
+  // 診断（directions を含む）は二人が共有する診断そのものなので、そのまま渡す。directions は共有済み・確定の要約だけから作られている
   const learningPlan = learning.current
     ? learning.current.plan.plan.map((p) => ({
         順番: p.order,
@@ -262,7 +263,8 @@ export async function createActionPlan(
       start_date: startDate,
     }),
     DATA_NOTE,
-    `# アプリからの補足\n- due は開始日（${startDate}）を1日目として、phase の範囲内の日付にしてください（1-30：${phaseRange(startDate, "1-30").from}〜${phaseRange(startDate, "1-30").to}、31-60：${phaseRange(startDate, "31-60").from}〜${phaseRange(startDate, "31-60").to}、61-90：${phaseRange(startDate, "61-90").from}〜${phaseRange(startDate, "61-90").to}）。\n- 期限は画面の「期限」欄に表示されるので、title には日付を書かない（「誰が・何を」を書き、「いつまでに」は due で表す）。`,
+    `# アプリからの補足\n- due は開始日（${startDate}）を1日目として、phase の範囲内の日付にしてください（1-30：${phaseRange(startDate, "1-30").from}〜${phaseRange(startDate, "1-30").to}、31-60：${phaseRange(startDate, "31-60").from}〜${phaseRange(startDate, "31-60").to}、61-90：${phaseRange(startDate, "61-90").from}〜${phaseRange(startDate, "61-90").to}）。\n- 期限は画面の「期限」欄に表示されるので、title には日付を書かない（「誰が・何を」を書き、「いつまでに」は due で表す）。
+- 診断の directions.tryNew（新しく試したいこと）があれば、小さく試す行動を1つ、31-60 か 61-90 の期間に入れる。成功を約束する書き方にしない。`,
   ].join("\n\n");
   const blocks = ["次の入力をもとに、出力形式どおりの JSON だけを返してください。", dataBlock("diagnosis", diag.diagnosis)];
   if (learningPlan) blocks.push(dataBlock("learning_plan", learningPlan));

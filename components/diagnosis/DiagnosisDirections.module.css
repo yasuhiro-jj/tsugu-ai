@@ -1,0 +1,29 @@
+/* 診断の「これからの選択肢」（守る・工夫する・新しく試す） */
+
+.note {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+}
+
+.group + .group {
+  margin-top: 14px;
+}
+
+.groupTitle {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 4px;
+}
+
+.text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

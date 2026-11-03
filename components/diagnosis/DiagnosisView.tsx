@@ -1,4 +1,5 @@
 import type { Diagnosis, Expert, Importance } from "@/lib/plan-types";
+import DiagnosisDirections from "./DiagnosisDirections";
 
 // 認識差の診断（AI の下書き）の表示。フックなし（サーバー・クライアントどちらからも使える）。
 
@@ -107,6 +108,9 @@ export default function DiagnosisView({ diagnosis }: { diagnosis: Diagnosis }) {
           <p className="summary-block__empty">（なし）</p>
         )}
       </section>
+
+      {/* 方向性（空なら何も出さない）。話し合うための問いの直前に置く */}
+      <DiagnosisDirections directions={diagnosis.directions} />
 
       <section className="diag-block" aria-labelledby="diag-questions">
         <h3 id="diag-questions" className="diag-block__title">

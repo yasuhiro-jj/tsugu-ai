@@ -18,6 +18,30 @@ export type Diagnosis = {
   }[];
   to_confirm: { item: string; how: string; expert: Expert }[];
   talk_questions: string[];
+  /** 承継の方向性の整理（守る／工夫する／新しく取り組む）。2026-11-03 追加。古い診断では3つとも空配列 */
+  directions: DiagnosisDirections;
+};
+
+/** 方向性の1項目。from が「誰の意見か」 */
+export type DirectionItem = {
+  /** 共有済み要約に書かれていた内容の言い換え（400文字以内） */
+  text: string;
+  /** 誰の意見か。「二人」は先代・後継者の両方が話していたこと */
+  from: "先代" | "後継者" | "二人";
+};
+
+/**
+ * 診断の「方向性」。材料は両者が共有した確定済み要約だけ（推測の欄は使わない）。
+ * 各0〜3件。空のときは「話に出ていない」の意味で、画面は欄ごと出さないか「まだありません」とする。
+ * AI は選択肢を広げる役なので、良し悪しや「こうすべき」の結論ではない（画面でも推奨の印を付けない）。
+ */
+export type DiagnosisDirections = {
+  /** 守りたいこと（伝統・こだわりとして残したいこと） */
+  keep: DirectionItem[];
+  /** 変えられること（今のやり方を工夫・改善できそうなこと） */
+  improve: DirectionItem[];
+  /** 新しく試したいこと（90日計画で小さな実験にする候補） */
+  tryNew: DirectionItem[];
 };
 
 export type DiagnosisRecord = {
