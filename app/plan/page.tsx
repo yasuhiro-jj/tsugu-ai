@@ -63,6 +63,17 @@ export default async function PlanPage() {
           <p role="alert">時間をおいて、ページを読み込み直してください。</p>
         </section>
       )}
+      <section className="card" aria-labelledby="plan-report-title">
+        <h2 id="plan-report-title">次は：決算サマリー・相談資料を作る</h2>
+        <p>
+          お店の数字・診断・この90日計画をもとに、決算サマリーと銀行への相談用資料の下書きを作れます。
+        </p>
+        <p>
+          <Link href="/report" className="button button--secondary">
+            決算サマリー・相談資料を作る
+          </Link>
+        </p>
+      </section>
     </>
   );
 }

@@ -1,0 +1,311 @@
+/* 決算サマリー・相談用資料。色は既存の藍鉄・弁柄・墨だけ。札は文字と枠線の形でも区別する */
+
+.draftNotice {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-accent-soft);
+  font-weight: 600;
+}
+
+.draftLabel {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 2px solid var(--color-accent);
+  border-radius: 4px;
+  background: var(--color-surface);
+  color: var(--color-accent);
+}
+
+.metaTitle {
+  font-size: 1rem !important;
+}
+
+.doc {
+  overflow-wrap: anywhere;
+}
+
+.docTitle {
+  font-family: var(--font-serif);
+  font-size: 1.3rem !important;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--color-primary);
+}
+
+.docDraft {
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.chapter {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.chapter:last-child {
+  border-bottom: none;
+}
+
+.chapterTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+}
+
+.badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.subTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 14px 0 6px;
+  font-size: 0.95rem;
+  color: var(--color-primary);
+}
+
+/* 作り手の札：文字が主。枠線の形（実線・破線・二重線）でも区別する */
+.badge {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.7;
+  white-space: nowrap;
+  background: var(--color-surface);
+}
+
+.badgeApp {
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+}
+
+.badgeAi {
+  border: 1px dashed var(--color-accent);
+  color: var(--color-accent);
+}
+
+.badgeMixed {
+  border: 3px double var(--color-primary);
+  color: var(--color-primary);
+}
+
+.badgeCheck {
+  border: 2px solid var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.text {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+}
+
+.small {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.list {
+  margin: 0 0 8px;
+  padding-left: 1.4em;
+}
+
+.list li + li {
+  margin-top: 6px;
+}
+
+.basis {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.actionTitle {
+  font-weight: 600;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0 0 8px;
+}
+
+.facts dt {
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.facts dd .list {
+  margin: 0;
+}
+
+.caution {
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border-left: 4px solid var(--color-accent);
+  background: var(--color-accent-soft);
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.forecast {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-accent-soft);
+}
+
+.topic + .topic {
+  margin-top: 12px;
+}
+
+.scenarios {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.scenario {
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+}
+
+.scenario p {
+  margin: 0;
+}
+
+.scenarioName {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.scenarioValue {
+  font-family: var(--font-serif);
+  font-size: 1.3rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tableBlock {
+  margin: 8px 0 10px;
+}
+
+.table {
+  width: 100%;
+}
+
+.wrapCell {
+  text-align: left !important;
+  white-space: normal !important;
+}
+
+.source {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+@media print {
+  .pageBreak {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .chapter {
+    break-inside: auto;
+  }
+
+  .badge,
+  .badgeCheck,
+  .draftLabel {
+    border-color: #000 !important;
+  }
+
+  .draftNotice,
+  .forecast,
+  .caution {
+    border-color: #000 !important;
+  }
+}
+
+/* スマホ幅：表をカード型の縦並びに切り替える（横にはみ出さない） */
+@media (max-width: 480px) {
+  .table,
+  .table thead,
+  .table tbody,
+  .table tr,
+  .table th,
+  .table td {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .table tbody tr {
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+  }
+
+  .table th,
+  .table td {
+    padding: 2px 0;
+    border: none;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .table td[data-label]::before {
+    content: attr(data-label) "：";
+    color: var(--color-muted);
+    font-size: 0.85rem;
+    font-weight: 400;
+  }
+
+  .scenarios {
+    grid-template-columns: 1fr;
+  }
+
+  .facts {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .facts dd {
+    margin-bottom: 8px;
+  }
+}

@@ -78,6 +78,15 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
   updated_at TEXT NOT NULL,
   PRIMARY KEY (demo_id, role)
 )`,
+  // 決算サマリー・相談用資料（二人の共有物。demo_id ごとに1行。content は AI の文だけで、数字は表示のたびにアプリが計算する）。
+  // diagnosis_created_at は作成時の診断。共有の取り消し・診断の作り直しで資料は消える（SEC-101・SEC-102 と同じ）
+  `CREATE TABLE IF NOT EXISTS reports (
+  demo_id TEXT NOT NULL PRIMARY KEY,
+  content TEXT NOT NULL,
+  diagnosis_created_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)`,
   // 保存期間の削除などの定期処理の実行時刻（1処理1行。SEC-201：実行間隔の制限に使う。demo_id は持たない）
   `CREATE TABLE IF NOT EXISTS maintenance (
   key TEXT NOT NULL PRIMARY KEY,

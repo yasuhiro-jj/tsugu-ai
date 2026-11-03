@@ -170,7 +170,7 @@ export async function setCurrentTheme(
 }
 
 /**
- * その demo_id のデータ（両方の役割の面談・診断・学習・講座の進み具合・90日計画）を全部消す。
+ * その demo_id のデータ（両方の役割の面談・AI参謀の会話・診断・学習・講座の進み具合・90日計画・決算サマリー資料）を全部消す。
  * AI 呼び出し回数の記録は消さない。
  */
 export async function deleteDemoData(db: Client, demoId: string): Promise<void> {
@@ -187,6 +187,7 @@ export function deleteDemoDataStatements(demoId: string): { sql: string; args: s
     { sql: `DELETE FROM interviews WHERE demo_id = ?`, args: [demoId] },
     // AI参謀の会話（両方の役割とも。lib/advisor.ts）
     { sql: `DELETE FROM advisor_chats WHERE demo_id = ?`, args: [demoId] },
+    // 診断・学習・講座・90日計画・決算サマリー資料（reports）は deletePlanDataStatements の中
     ...deletePlanDataStatements(demoId),
   ];
 }

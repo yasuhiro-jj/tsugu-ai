@@ -167,7 +167,7 @@ export default function AskPanel({ courseId, articleNo, articleTitle }: Props) {
                 </dl>
               </>
             )}
-            <p className={styles.note}>AIによる説明です。記事にない数字は答えません</p>
+            <p className={styles.note}>AIによる説明です。記事にない数字は答えません。税金・融資・法律の判断は専門家に確認してください</p>
           </div>
         )}
       </div>

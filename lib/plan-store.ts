@@ -9,13 +9,14 @@ import type { Client } from "@libsql/client";
 import { nowIso } from "./util";
 export { jstToday, nowIso } from "./util";
 
-/** DELETE /api/demo 用：診断・学習・講座の進み具合・90日計画を全部消す。 */
+/** DELETE /api/demo 用：診断・学習・講座の進み具合・90日計画・決算サマリー資料を全部消す。 */
 export function deletePlanDataStatements(demoId: string) {
   return [
     { sql: `DELETE FROM diagnoses WHERE demo_id = ?`, args: [demoId] },
     { sql: `DELETE FROM learning WHERE demo_id = ?`, args: [demoId] },
     { sql: `DELETE FROM course_progress WHERE demo_id = ?`, args: [demoId] },
     { sql: `DELETE FROM action_plans WHERE demo_id = ?`, args: [demoId] },
+    { sql: `DELETE FROM reports WHERE demo_id = ?`, args: [demoId] },
   ];
 }
 
@@ -29,7 +30,7 @@ const KEEP = (col: string) =>
 
 /**
  * 共有の取り消しなどで診断が使えなくなったときに流す文。診断と、診断から作ったもの
- * （90日計画・診断を使った学習プラン）を消す。取り消した内容が派生物に残らないようにするため。
+ * （90日計画・決算サマリー資料・診断を使った学習プラン）を消す。取り消した内容が派生物に残らないようにするため。
  * 本人の希望・知識レベル・小テストの結果は残す（診断の内容を含まないため）。
  *
  * - 呼び出し側で、ほかの文（shared の UPDATE など）と同じ db.batch(..., "write") に入れること（SEC-101）
@@ -42,6 +43,8 @@ export function invalidateDiagnosisStatements(demoId: string): Stmt[] {
   return [
     { sql: `DELETE FROM diagnoses WHERE demo_id = ?`, args: [demoId] },
     { sql: `DELETE FROM action_plans WHERE demo_id = ?`, args: [demoId] },
+    // 決算サマリー・相談用資料（lib/report.ts）も診断から作るので、同じトランザクションで消す
+    { sql: `DELETE FROM reports WHERE demo_id = ?`, args: [demoId] },
     {
       sql: `UPDATE learning SET
               current_plan = CASE WHEN ${KEEP("current_plan")} = 1 THEN current_plan

@@ -96,6 +96,17 @@ CREATE TABLE IF NOT EXISTS advisor_chats (
   PRIMARY KEY (demo_id, role)
 );
 
+-- 決算サマリー・相談用資料（2026-11-03 追加）。二人の共有物（90日計画と同じ扱い）：demo_id ごとに1行。
+-- content は AI が書いた文だけ（数字は表示のたびに lib/financials.ts で計算する）。
+-- diagnosis_created_at は作成時の診断。共有を取り消すと診断と一緒に消える。DELETE /api/demo と保存期間の削除でも消す。
+CREATE TABLE IF NOT EXISTS reports (
+  demo_id TEXT NOT NULL PRIMARY KEY,
+  content TEXT NOT NULL,
+  diagnosis_created_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 -- 保存期間の削除（lib/retention.ts）などの定期処理の最後の実行時刻。1時間に1回だけ動かすために使う（SEC-201）。
 -- demo_id は持たない（利用者のデータは入らない）。
 CREATE TABLE IF NOT EXISTS maintenance (

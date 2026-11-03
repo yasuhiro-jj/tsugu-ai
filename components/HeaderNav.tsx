@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: "/compare", label: "認識差の比較" },
   { href: "/learning", label: "学習プラン" },
   { href: "/plan", label: "90日行動計画" },
+  { href: "/report", label: "資料" },
   { href: "/advisor", label: "AI参謀" },
 ] as const;
 
