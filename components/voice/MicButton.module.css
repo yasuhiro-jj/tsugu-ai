@@ -66,3 +66,42 @@
   color: var(--color-accent);
   overflow-wrap: anywhere;
 }
+
+/* 音量メーター：色ではなくバーの高さで「声を拾っている」ことを示す */
+.meter {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 18px;
+  flex: none;
+}
+
+.meter[hidden] {
+  display: none;
+}
+
+.bar {
+  display: block;
+  width: 3px;
+  height: 100%;
+  background: currentColor;
+  border-radius: 1px;
+  transform: scaleY(0.15);
+  transform-origin: bottom;
+  transition: transform 80ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 動きを減らす設定：更新はゆっくり（0.5秒ごと）にし、なめらかな動きも付けない */
+  .bar {
+    transition: none;
+  }
+}
+
+/* 確定前の途中の文（入力欄には入れず、ここに灰色で見せるだけ） */
+.interim {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}

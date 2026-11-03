@@ -7,10 +7,11 @@ import {
   type VoiceRecognitionErrorEvent,
   type VoiceRecognitionEvent,
 } from "./speech-types";
+import VolumeMeter from "./VolumeMeter";
 import styles from "./MicButton.module.css";
 
 type Props = {
-  /** 確定した聞き取り結果（途中の結果は渡さない） */
+  /** 入力欄に足す文（確定した結果と、止めたときに残っていた途中の文）。途中の結果は随時には渡さない */
   onText: (text: string) => void;
   /** 送信中・AI の返事待ちなど、押せないとき true。聞き取り中に true になったら止める */
   disabled?: boolean;
@@ -19,6 +20,10 @@ type Props = {
 };
 
 const MIC_DENIED = "マイクが使えませんでした。ブラウザの設定でマイクを許可してください。";
+const STOPPED = "聞き取りが止まりました。もう一度押してください。";
+
+/** 起き直しても意味のないエラー（これが出たら自動でやり直さない） */
+const FATAL_ERRORS = new Set(["not-allowed", "service-not-allowed", "audio-capture", "network"]);
 
 function errorMessage(code: string): string | null {
   switch (code) {
@@ -30,7 +35,7 @@ function errorMessage(code: string): string | null {
     case "no-speech":
       return "聞き取れませんでした。もう一度押して、話してください。";
     case "network":
-      return "音声入力の通信がうまくいきませんでした。少し待ってから、もう一度お試しください。";
+      return "音声を文字にするサービスにつながりませんでした（Edge はマイクロソフト、Chrome は Google のサーバーを使います）。";
     case "aborted":
       return null; // こちらから止めたとき
     default:
@@ -42,12 +47,20 @@ function errorMessage(code: string): string | null {
  * マイクで話した内容を文字にするボタン（ブラウザの Web Speech API を使う）。
  * 音声認識が無いブラウザでは何も表示しない。サーバー描画との食い違いを避けるため、
  * 対応しているかは画面がブラウザで動き始めてから調べる。
+ *
+ * 途中の結果はボタンの近くに灰色で見せるだけで、入力欄には確定してから足す。
+ * 利用者が止めたときは、残っている途中の文を足してから認識を打ち切り、その後に届く結果は捨てる（二重に入らない）。
  */
 export default function MicButton({ onText, disabled = false, size = "normal" }: Props) {
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
+  const [interim, setInterim] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  /** いま結果を受け付けている認識。null や別の認識になったら、届いた結果・終了は無視する */
   const recognitionRef = useRef<VoiceRecognition | null>(null);
+  const interimRef = useRef("");
+  const restartedRef = useRef(false);
+  const lastErrorRef = useRef<string | null>(null);
   const onTextRef = useRef(onText);
   const noteId = useId();
 
@@ -55,20 +68,40 @@ export default function MicButton({ onText, disabled = false, size = "normal" }:
     onTextRef.current = onText;
   }, [onText]);
 
+  function clearInterim() {
+    interimRef.current = "";
+    setInterim("");
+  }
+
+  /** 認識を手放す（以後その認識から届く結果・終了は無視される） */
+  function release(drop: boolean) {
+    const rec = recognitionRef.current;
+    recognitionRef.current = null;
+    if (rec && drop) rec.abort();
+    setListening(false);
+    clearInterim();
+  }
+
   useEffect(() => {
     setSupported(getRecognitionConstructor() !== null);
     return () => {
-      recognitionRef.current?.abort();
+      // 画面を離れたら打ち切る（メーターも外れてマイクを離す）
+      const rec = recognitionRef.current;
       recognitionRef.current = null;
+      rec?.abort();
     };
   }, []);
 
   // 押せない状態になったら、聞き取りを打ち切る（返事待ちの間に文字が入らないように）
   useEffect(() => {
-    if (disabled && recognitionRef.current) {
-      recognitionRef.current.abort();
-    }
+    if (disabled && recognitionRef.current) release(true);
   }, [disabled]);
+
+  function flushInterim() {
+    const rest = interimRef.current.trim();
+    clearInterim();
+    if (rest) onTextRef.current(rest);
+  }
 
   function start() {
     const Ctor = getRecognitionConstructor();
@@ -76,46 +109,73 @@ export default function MicButton({ onText, disabled = false, size = "normal" }:
     const rec = new Ctor();
     rec.lang = "ja-JP";
     rec.continuous = true;
-    rec.interimResults = false; // 途中の結果は受け取らない
+    rec.interimResults = true; // 途中の結果は表示だけに使う（Edge は確定までが長いことがあるため）
     rec.maxAlternatives = 1;
 
     rec.onresult = (ev: VoiceRecognitionEvent) => {
       if (recognitionRef.current !== rec) return;
-      let text = "";
+      let finalText = "";
+      let interimText = "";
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
         const result = ev.results[i];
-        if (result.isFinal && result.length > 0) text += result[0].transcript;
+        if (result.length === 0) continue;
+        if (result.isFinal) finalText += result[0].transcript;
+        else interimText += result[0].transcript;
       }
-      text = text.trim();
-      if (text) {
+      interimRef.current = interimText;
+      setInterim(interimText);
+      finalText = finalText.trim();
+      if (finalText) {
+        restartedRef.current = false; // 聞き取れているので、無音で止まったときのやり直しをまた1回使えるようにする
         setMessage(null);
-        onTextRef.current(text);
+        onTextRef.current(finalText);
       }
     };
     rec.onerror = (ev: VoiceRecognitionErrorEvent) => {
+      if (recognitionRef.current !== rec) return;
+      lastErrorRef.current = ev.error;
       const msg = errorMessage(ev.error);
-      if (msg) setMessage(msg);
+      if (msg && FATAL_ERRORS.has(ev.error)) setMessage(msg);
     };
     rec.onend = () => {
-      if (recognitionRef.current === rec) recognitionRef.current = null;
-      setListening(false);
+      if (recognitionRef.current !== rec) return; // 利用者が止めた・打ち切った後の終了
+      // 利用者が止めていないのに終わった（無音などでブラウザが止めた）
+      flushInterim();
+      const err = lastErrorRef.current;
+      lastErrorRef.current = null;
+      if (err === null || !FATAL_ERRORS.has(err)) {
+        if (!restartedRef.current) {
+          restartedRef.current = true;
+          try {
+            rec.start(); // 1回だけ自動でやり直す
+            return;
+          } catch {
+            // 下で止まった扱いにする
+          }
+        }
+        setMessage(err === "no-speech" ? (errorMessage("no-speech") ?? STOPPED) : STOPPED);
+      }
+      release(false);
     };
 
     try {
       recognitionRef.current = rec;
+      restartedRef.current = false;
+      lastErrorRef.current = null;
+      clearInterim();
       setMessage(null);
       rec.start();
       setListening(true);
     } catch {
-      recognitionRef.current = null;
-      setListening(false);
+      release(false);
       setMessage(MIC_DENIED);
     }
   }
 
   function stop() {
-    // stop は話し終えた分を確定させてから終わる（onend で表示が戻る）
-    recognitionRef.current?.stop();
+    // 確定していない途中の文も足してから打ち切る。打ち切った認識の結果はもう受け付けないので二重に入らない
+    flushInterim();
+    release(true);
   }
 
   function handleClick() {
@@ -141,9 +201,11 @@ export default function MicButton({ onText, disabled = false, size = "normal" }:
       >
         <span className={styles.dot} aria-hidden="true" />
         {visibleLabel}
+        {listening && <VolumeMeter />}
       </button>
+      {listening && interim && <p className={styles.interim}>聞き取り中：{interim}</p>}
       <p id={noteId} className={styles.note}>
-        音声はブラウザの音声入力（Chrome では Google のサーバー）で文字にします
+        音声はブラウザの音声入力で文字にします（Chrome は Google、Edge はマイクロソフトのサーバーで文字にします）
       </p>
       <p className={styles.message} role="status" aria-live="polite">
         {message}
