@@ -112,7 +112,7 @@ npm run dev
 | `TURSO_DATABASE_URL` | Turso の接続先（`libsql://…`） |
 | `TURSO_AUTH_TOKEN` | Turso の認証トークン |
 | `CLAUDE_MODEL` | 使用するモデル名（省略時は `lib/config.ts` の既定値） |
-| `AI_DAILY_CALL_LIMIT` | アプリ全体の 1 日の AI 呼び出し上限（省略時 500） |
+| `AI_DAILY_CALL_LIMIT` | アプリ全体の 1 日の AI 呼び出し上限（省略時 2,000。日本時間の毎朝 9:00 に戻る） |
 
 | コマンド | 内容 |
 |---|---|

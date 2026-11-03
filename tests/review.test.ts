@@ -5,7 +5,7 @@ import type { Client } from "@libsql/client";
 import { NextRequest } from "next/server";
 import { aiJson, createFakeAi, createTestDb, DEMO_A, DEMO_B } from "./helpers";
 import { forbiddenMessage, handleInterviewApi, handleJsonApi, type ApiEnv } from "@/lib/api";
-import { reserveAiCall } from "@/lib/ai/usage";
+import { AI_CALLS_DAILY_LIMIT_DEFAULT, dailyLimit, reserveAiCall, usageDayKey } from "@/lib/ai/usage";
 import type { JsonAi } from "@/lib/ai/json-ai";
 import { ensureInterviewRows, loadRecords, saveRecord } from "@/lib/interview/store";
 import { buildInterviewRequest, getInterviewState, sendMessage } from "@/lib/interview/service";
@@ -121,6 +121,33 @@ describe("AI 回数の1日あたりの上限（ai_usage_daily）", () => {
     await reserveAiCall(db, DEMO_A, "predecessor");
     await reserveAiCall(db, DEMO_B, "successor");
     await expect(reserveAiCall(db, "C".repeat(43), "predecessor")).rejects.toMatchObject({ status: 429 });
+  });
+
+  it("環境変数が無ければ既定は 2,000 回（オーナー決定 2026-11-03）", () => {
+    vi.stubEnv("AI_DAILY_CALL_LIMIT", "");
+    expect(AI_CALLS_DAILY_LIMIT_DEFAULT).toBe(2000);
+    expect(dailyLimit()).toBe(2000);
+    vi.stubEnv("AI_DAILY_CALL_LIMIT", "abc");
+    expect(dailyLimit()).toBe(2000);
+  });
+
+  it("2,000 回目までは通り、2,001 回目は 429（デモ用 ID が違っても全体で数える）", async () => {
+    vi.stubEnv("AI_DAILY_CALL_LIMIT", "");
+    const day = usageDayKey(new Date().toISOString());
+    await db.execute({ sql: "INSERT INTO ai_usage_daily (day, calls) VALUES (?, ?)", args: [day, 1999] });
+    await reserveAiCall(db, DEMO_A, "predecessor"); // 2,000 回目
+    await expect(reserveAiCall(db, DEMO_B, "successor")).rejects.toMatchObject({ status: 429 });
+    const rs = await db.execute({ sql: "SELECT calls FROM ai_usage_daily WHERE day = ?", args: [day] });
+    expect(Number(rs.rows[0].calls)).toBe(2000);
+  });
+
+  it("日の区切りは日本時間の毎朝 9:00（UTC 0:00）", () => {
+    // 日本時間 11/4 8:59:59 → まだ 11/3 の枠
+    expect(usageDayKey(new Date("2026-11-04T08:59:59+09:00").toISOString())).toBe("2026-11-03");
+    // 日本時間 11/4 9:00:00 → 11/4 の枠（回数が戻る）
+    expect(usageDayKey(new Date("2026-11-04T09:00:00+09:00").toISOString())).toBe("2026-11-04");
+    // 日本時間 11/4 0:30（深夜）→ まだ 11/3 の枠
+    expect(usageDayKey(new Date("2026-11-04T00:30:00+09:00").toISOString())).toBe("2026-11-03");
   });
 });
 

@@ -10,17 +10,26 @@ import { ServiceError } from "../errors";
 import { nowIso } from "../util";
 
 export const AI_CALLS_PER_ROLE_LIMIT = 150;
-export const AI_CALLS_DAILY_LIMIT_DEFAULT = 500; // 通し1回で約40回。リハーサル込みの目安（security SEC-001）
+// 通し1回で約35〜40回。審査期間に多くの人が試せるよう 2,000 回（オーナー決定 2026-11-03。元は 500 回、security SEC-001）
+export const AI_CALLS_DAILY_LIMIT_DEFAULT = 2000;
 
-function dailyLimit(): number {
+export function dailyLimit(): number {
   const v = Number(process.env.AI_DAILY_CALL_LIMIT);
   return Number.isInteger(v) && v > 0 ? v : AI_CALLS_DAILY_LIMIT_DEFAULT;
 }
 
 /**
+ * 1日上限を数える「日」の区切り。UTC の日付をそのまま使うので、日本時間の毎朝 9:00 に切り替わる
+ * （UTC 0:00 = 日本時間 9:00）。例：日本時間 11/4 8:59 は "2026-11-03"、9:00 は "2026-11-04"。
+ */
+export function usageDayKey(nowIsoString: string): string {
+  return nowIsoString.slice(0, 10);
+}
+
+/**
  * AI 呼び出しを1回分予約する（上限内なら回数を +1）。上限を超えたら 429。
  * - デモ用 ID × 役割ごとの上限（150回）
- * - アプリ全体の1日あたりの上限（デモ用 ID を作り直す悪用への保険。既定 500回、AI_DAILY_CALL_LIMIT で変更可）
+ * - アプリ全体の1日あたりの上限（デモ用 ID を作り直す悪用への保険。既定 2,000回、AI_DAILY_CALL_LIMIT で変更可。日本時間の毎朝 9:00 に戻る）
  */
 export async function reserveAiCall(
   db: Client,
@@ -44,13 +53,16 @@ export async function reserveAiCall(
       "このデモで AI と話せる回数の上限に達しました。「デモをやり直す」では回数は戻りません。ご了承ください",
     );
   }
-  const day = now.slice(0, 10);
+  const day = usageDayKey(now);
   const daily = await db.execute({
     sql: `INSERT INTO ai_usage_daily (day, calls) VALUES (?, 1)
           ON CONFLICT(day) DO UPDATE SET calls = calls + 1 WHERE calls < ?`,
     args: [day, dailyLimit()],
   });
   if (daily.rowsAffected !== 1) {
-    throw new ServiceError(429, "本日は AI の利用が混み合っています。時間をおいてもう一度お試しください");
+    throw new ServiceError(
+      429,
+      "本日分の AI の利用回数（アプリ全体）の上限に達しました。日本時間の朝9時に回数が戻ります。時間をおいてもう一度お試しください",
+    );
   }
 }
