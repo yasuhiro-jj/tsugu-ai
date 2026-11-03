@@ -63,7 +63,7 @@ const DIAG = {
   common: [{ point: "続けたい", evidence: "e" }],
   gaps: [{ theme: "資金繰り", point: "p", senior_said: "s", successor_said: "t", numbers: "n", importance: "高" }],
   to_confirm: [],
-  talk_questions: ["問い"],
+  talk_questions: ["問い1", "問い2"],
 };
 const learningOut = (reason = "理由", message = "この順番でよいですか？") => ({
   plan: [

@@ -386,8 +386,8 @@ describe("90日計画", () => {
     expect(st.actions).toHaveLength(6);
     expect(new Set(st.actions.map((a) => a.id)).size).toBe(6);
     const id = st.actions[0].id;
-    const st2 = await updateAction(db, DEMO_A, { id, status: "進行中", owner: "二人", due: "2027-01-20" });
-    expect(st2.actions.find((a) => a.id === id)).toMatchObject({ status: "進行中", owner: "二人", phase: "61-90" });
+    const st2 = await updateAction(db, DEMO_A, { id, status: "進行中", owner: "二人", due: "2026-11-20" });
+    expect(st2.actions.find((a) => a.id === id)).toMatchObject({ status: "進行中", owner: "二人", due: "2026-11-20", phase: "1-30" });
     await expect(updateAction(db, DEMO_A, { id, due: "2027-03-01" })).rejects.toMatchObject({ status: 400 });
     await expect(updateAction(db, DEMO_A, { id, owner: "銀行" })).rejects.toMatchObject({ status: 400 });
     await expect(updateAction(db, DEMO_B, { id, status: "完了" })).rejects.toMatchObject({ status: 404 });

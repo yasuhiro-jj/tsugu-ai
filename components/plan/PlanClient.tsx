@@ -2,12 +2,20 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import type { ActionPlanState, ActionStatus, PlanAction } from "@/lib/plan-types";
-import { asObject, postJson } from "@/components/post-json";
+import { asObject, postJson, type PostResult } from "@/components/post-json";
+import { deleteJson } from "./delete-json";
 import { formatDateTime, formatDay } from "@/components/format";
 import { useElapsedSeconds } from "@/components/use-elapsed";
+import styles from "./PlanClient.module.css";
 
 // 90日行動計画（先代・後継者どちらも閲覧・更新できる）。
-// 作成・作り直し：POST /api/plan、状態の更新：POST /api/plan/action
+// 作成・作り直し：POST /api/plan、文・状態・担当・期限の更新：POST /api/plan/action、削除：DELETE /api/plan/action
+// 担当・期限の値の確認は画面でも行うが、最終的な確認はサーバー（lib/action-plan.ts の updateAction）が行う。
+
+type ActionPatch = Partial<Pick<PlanAction, "title" | "status" | "owner" | "due">>;
+
+/** 行動の文の上限（lib/action-plan.ts の ACTION_TITLE_MAX と同じ。サーバーでも確かめる） */
+const TITLE_MAX = 200;
 
 type Props = {
   initialState: ActionPlanState;
@@ -24,6 +32,8 @@ const PHASES: { key: PlanAction["phase"]; days: string; label: string }[] = [
 ];
 
 const STATUSES: ActionStatus[] = ["未着手", "進行中", "完了"];
+
+const OWNERS: PlanAction["owner"][] = ["先代", "後継者", "二人"];
 
 const OWNER_CLASS: Record<PlanAction["owner"], string> = {
   先代: "badge badge--owner-predecessor",
@@ -84,25 +94,52 @@ export default function PlanClient({ initialState, today, courseTitles }: Props)
     setState(r.data);
   }
 
-  async function updateStatus(id: string, status: ActionStatus) {
-    if (rowPending[id]) return;
-    const before = state;
-    // 先に画面へ反映し、失敗したら戻す
-    setState((s) => ({ ...s, actions: s.actions.map((a) => (a.id === id ? { ...a, status } : a)) }));
+  /**
+   * 行動1件への操作の共通の仕組み：同じ行の二重送信防止・保存中の表示・失敗時はこの行だけ元に戻してサーバーの文言を出す。
+   * optimistic があれば先に画面へ反映する。成功すればサーバーが返した計画全体（期限順）に置き換える。
+   */
+  async function runRow(
+    id: string,
+    send: () => Promise<PostResult<ActionPlanState>>,
+    optimistic?: ActionPatch,
+  ): Promise<boolean> {
+    if (rowPending[id]) return false;
+    const before = state.actions.find((a) => a.id === id);
+    if (!before) return false;
+    if (optimistic) {
+      setState((s) => ({ ...s, actions: s.actions.map((a) => (a.id === id ? { ...a, ...optimistic } : a)) }));
+    }
     setRowPending((m) => ({ ...m, [id]: true }));
     setRowError((m) => {
       const next = { ...m };
       delete next[id];
       return next;
     });
-    const r = await postJson<ActionPlanState>("/api/plan/action", { id, status }, pickState);
-    setRowPending((m) => ({ ...m, [id]: false }));
+    const r = await send();
+    setRowPending((m) => {
+      const next = { ...m };
+      delete next[id];
+      return next;
+    });
     if (!r.ok) {
-      setState(before);
+      setState((s) => ({ ...s, actions: s.actions.map((a) => (a.id === id ? before : a)) }));
       setRowError((m) => ({ ...m, [id]: r.error }));
-      return;
+      return false;
     }
     setState(r.data);
+    return true;
+  }
+
+  // 文・状態・担当・期限のどれかを更新する。POST /api/plan/action
+  function updateAction(id: string, patch: ActionPatch): Promise<boolean> {
+    return runRow(id, () => postJson<ActionPlanState>("/api/plan/action", { id, ...patch }, pickState), patch);
+  }
+
+  // 行動を消す。DELETE /api/plan/action（消えるまでは行を残し、失敗したらその行に理由を出す）
+  async function removeAction(id: string): Promise<boolean> {
+    const ok = await runRow(id, () => deleteJson<ActionPlanState>("/api/plan/action", { id }, pickState));
+    if (ok) planHeadingRef.current?.focus(); // 消えた行にあったフォーカスを、計画の見出しへ移す
+    return ok;
   }
 
   const dateField = (
@@ -209,7 +246,10 @@ export default function PlanClient({ initialState, today, courseTitles }: Props)
                         courseTitles={courseTitles}
                         pending={rowPending[a.id] === true}
                         error={rowError[a.id] ?? null}
-                        onChange={(s) => void updateStatus(a.id, s)}
+                        startDate={state.startDate}
+                        canDelete={state.actions.length > 1}
+                        onChange={(patch) => updateAction(a.id, patch)}
+                        onDelete={() => removeAction(a.id)}
                       />
                     ))}
                   </ul>
@@ -238,7 +278,7 @@ export default function PlanClient({ initialState, today, courseTitles }: Props)
         ) : (
           <div className="inline-confirm" role="group" aria-labelledby="remake-confirm-text">
             <p id="remake-confirm-text" ref={confirmRef} tabIndex={-1}>
-              今の計画と、行動ごとの状態（進行中・完了など）は新しい下書きに置き換わります。よろしいですか？
+              今の計画と、行動ごとに変えた状態・担当・期限は新しい下書きに置き換わります。よろしいですか？
             </p>
             {dateField}
             <div className="button-row">
@@ -273,48 +313,337 @@ export default function PlanClient({ initialState, today, courseTitles }: Props)
   );
 }
 
+// ---- 期限の範囲（lib/action-plan.ts の phaseRange と同じ計算。lib は server-only のため画面用に持つ） ----
+
+function addDays(ymd: string, days: number): string {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** 開始日を1日目として、その期間（1-30 → 開始日〜開始日+29）の日付の範囲 */
+function phaseRange(start: string, phase: PlanAction["phase"]): { from: string; to: string } {
+  const offset = phase === "1-30" ? 0 : phase === "31-60" ? 30 : 60;
+  return { from: addDays(start, offset), to: addDays(start, offset + 29) };
+}
+
+function isYmd(v: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
 type RowProps = {
   action: PlanAction;
   courseTitles: Record<string, string>;
   pending: boolean;
   error: string | null;
-  onChange: (status: ActionStatus) => void;
+  /** 計画の開始日。無ければ期限は変えられない */
+  startDate: string | null;
+  /** 残りが1件なら false（最後の1件は消せない） */
+  canDelete: boolean;
+  /** 成功したら true */
+  onChange: (patch: ActionPatch) => Promise<boolean>;
+  onDelete: () => Promise<boolean>;
 };
 
-function ActionRow({ action, courseTitles, pending, error, onChange }: RowProps) {
-  const selectId = useId();
+// 改行・タブ・行区切り（U+2028/2029）。エスケープを使わず文字コードで作る
+const LINE_BREAKS = new RegExp("[" + [13, 10, 9, 0x2028, 0x2029].map((c) => String.fromCharCode(c)).join("") + "]+", "g");
+
+/** 改行・タブなどは入れさせない（貼り付けたものは空白1つにする） */
+function oneLine(v: string): string {
+  return v.replace(LINE_BREAKS, " ");
+}
+
+function ActionRow({ action, courseTitles, pending, error, startDate, canDelete, onChange, onDelete }: RowProps) {
+  const titleInputId = useId();
+  const titleCountId = useId();
+  const deleteTextId = useId();
+  // 文の編集中の値（null = 編集していない）
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const editButtonRef = useRef<HTMLButtonElement>(null);
+  const confirmTextRef = useRef<HTMLParagraphElement>(null);
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const editing = titleDraft !== null;
+
+  useEffect(() => {
+    if (editing) titleInputRef.current?.focus();
+  }, [editing]);
+
+  useEffect(() => {
+    if (confirmDelete) confirmTextRef.current?.focus();
+  }, [confirmDelete]);
+
+  const titleTrimmed = titleDraft?.trim() ?? "";
+  const titleLength = Array.from(titleTrimmed).length; // サーバーと同じく文字（コードポイント）で数える
+  let titleProblem: string | null = null;
+  if (editing) {
+    if (titleLength === 0) titleProblem = "行動の文を入力してください。";
+    else if (titleLength > TITLE_MAX) titleProblem = `${TITLE_MAX}文字以内にしてください（今 ${titleLength}文字）。`;
+  }
+
+  function closeTitle() {
+    setTitleDraft(null);
+    // 閉じたら［直す］へフォーカスを戻す（描き直しの後）
+    requestAnimationFrame(() => editButtonRef.current?.focus());
+  }
+
+  async function saveTitle() {
+    if (!editing || titleProblem || pending) return;
+    if (titleTrimmed === action.title) {
+      closeTitle();
+      return;
+    }
+    // 失敗したら編集欄を開いたままにして、直してもう一度保存できるようにする
+    if (await onChange({ title: titleTrimmed })) closeTitle();
+  }
+
+  function cancelDelete() {
+    setConfirmDelete(false);
+    requestAnimationFrame(() => deleteButtonRef.current?.focus());
+  }
+
+  async function doDelete() {
+    if (pending) return;
+    const ok = await onDelete();
+    if (!ok) cancelDelete(); // 消せなかったら確認を閉じ、行の下に理由を出す
+  }
+
+  const statusId = useId();
+  const ownerId = useId();
+  const dueId = useId();
+  const dueHintId = useId();
+  // 期限の入力中の値（null = 未編集で、保存済みの期限を表示）。日付は1文字ずつ変わるため、ボタンで保存する
+  const [dueDraft, setDueDraft] = useState<string | null>(null);
   const course = action.linked_course ? (courseTitles[action.linked_course] ?? action.linked_course) : "";
+  const range = startDate ? phaseRange(startDate, action.phase) : null;
+  const dueValue = dueDraft ?? action.due;
+  const dueChanged = dueDraft !== null && dueDraft !== action.due;
+  let dueProblem: string | null = null;
+  if (dueDraft !== null && dueChanged) {
+    if (!isYmd(dueDraft)) dueProblem = "日付を選んでください。";
+    else if (range && (dueDraft < range.from || dueDraft > range.to)) {
+      dueProblem = `期限は ${formatDay(range.from)}〜${formatDay(range.to)} の間で選んでください。`;
+    }
+  }
+
+  function saveDue() {
+    if (dueDraft === null || !dueChanged || dueProblem || pending || !range) return;
+    const due = dueDraft;
+    setDueDraft(null);
+    void onChange({ due });
+  }
+
   return (
     <li className={action.status === "完了" ? "action action--done" : "action"}>
       <div className="action__head">
         <span className={OWNER_CLASS[action.owner] ?? "badge"}>{action.owner}</span>
         <span className="action__due">期限：{formatDay(action.due)}</span>
       </div>
-      <p className="action__title">{action.title}</p>
+      {editing ? (
+        <form
+          className={styles.titleForm}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void saveTitle();
+          }}
+        >
+          <label htmlFor={titleInputId} className={styles.titleLabel}>
+            行動の文
+          </label>
+          <input
+            ref={titleInputRef}
+            id={titleInputId}
+            type="text"
+            className={`input ${styles.titleInput}`}
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(oneLine(e.target.value))}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                closeTitle();
+              }
+            }}
+            disabled={pending}
+            aria-busy={pending}
+            aria-invalid={titleProblem ? true : undefined}
+            aria-describedby={titleCountId}
+            autoComplete="off"
+          />
+          <p id={titleCountId} className={`muted ${styles.hint}`}>
+            {titleLength} ／ {TITLE_MAX}文字（改行は入れられません）
+          </p>
+          {titleProblem && (
+            <p className={`form-error ${styles.hint}`} role="alert">
+              {titleProblem}
+            </p>
+          )}
+          <div className="button-row">
+            <button type="submit" className="button" disabled={pending || titleProblem !== null} aria-busy={pending}>
+              {pending ? "保存しています…" : "保存"}
+            </button>
+            <button type="button" className="button button--secondary" onClick={closeTitle} disabled={pending}>
+              やめる
+            </button>
+          </div>
+        </form>
+      ) : (
+        <p className="action__title">{action.title}</p>
+      )}
       {(action.linked_gap || course) && (
         <ul className="action__links">
           {action.linked_gap && <li>つながる認識差：{action.linked_gap}</li>}
           {course && <li>関連する講座：{course}</li>}
         </ul>
       )}
-      <div className="action__status">
-        <label htmlFor={selectId}>状態</label>
-        <select
-          id={selectId}
-          className="select"
-          value={action.status}
-          onChange={(e) => onChange(e.target.value as ActionStatus)}
-          disabled={pending}
-          aria-busy={pending}
+      <div className={styles.edit}>
+        <div className="action__status">
+          <label htmlFor={ownerId} className={styles.label}>
+            担当
+          </label>
+          <select
+            id={ownerId}
+            className={`select ${styles.grow}`}
+            value={action.owner}
+            onChange={(e) => void onChange({ owner: e.target.value as PlanAction["owner"] })}
+            disabled={pending}
+            aria-busy={pending}
+          >
+            {OWNERS.map((o) => (
+              <option key={o} value={o}>
+                {o}
+              </option>
+            ))}
+          </select>
+        </div>
+        <form
+          className="action__status"
+          onSubmit={(e) => {
+            e.preventDefault();
+            saveDue();
+          }}
         >
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        {pending && <span className="muted">保存しています…</span>}
+          <label htmlFor={dueId} className={styles.label}>
+            期限
+          </label>
+          <input
+            id={dueId}
+            type="date"
+            className={`input ${styles.grow}`}
+            value={dueValue}
+            min={range?.from}
+            max={range?.to}
+            onChange={(e) => setDueDraft(e.target.value)}
+            disabled={pending || !range}
+            aria-busy={pending}
+            aria-invalid={dueProblem ? true : undefined}
+            aria-describedby={dueHintId}
+          />
+          {dueChanged && (
+            <>
+              <button
+                type="submit"
+                className="button"
+                disabled={pending || dueProblem !== null}
+              >
+                期限を保存
+              </button>
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => setDueDraft(null)}
+                disabled={pending}
+              >
+                戻す
+              </button>
+            </>
+          )}
+          <p id={dueHintId} className={`muted ${styles.hint}`}>
+            {range
+              ? `この時期（${formatDay(range.from)}〜${formatDay(range.to)}）の中で選べます。`
+              : "開始日が無いため、期限は変えられません。"}
+          </p>
+          {dueProblem && (
+            <p className={`form-error ${styles.hint}`} role="alert">
+              {dueProblem}
+            </p>
+          )}
+        </form>
+        <div className="action__status">
+          <label htmlFor={statusId} className={styles.label}>
+            状態
+          </label>
+          <select
+            id={statusId}
+            className={`select ${styles.grow}`}
+            value={action.status}
+            onChange={(e) => void onChange({ status: e.target.value as ActionStatus })}
+            disabled={pending}
+            aria-busy={pending}
+          >
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <span role="status" aria-live="polite" className="muted">
+            {pending ? "保存しています…" : ""}
+          </span>
+        </div>
       </div>
+      {confirmDelete ? (
+        <div className={`inline-confirm ${styles.rowTools}`} role="group" aria-labelledby={deleteTextId}>
+          <p id={deleteTextId} ref={confirmTextRef} tabIndex={-1}>
+            この行動を消します。元には戻せません。よろしいですか？
+          </p>
+          <div className="button-row">
+            <button
+              type="button"
+              className="button button--danger-solid"
+              onClick={() => void doDelete()}
+              disabled={pending}
+              aria-busy={pending}
+            >
+              {pending ? "消しています…" : "削除する"}
+            </button>
+            <button type="button" className="button button--secondary" onClick={cancelDelete} disabled={pending}>
+              やめる
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className={`button-row ${styles.rowTools}`}>
+          {!editing && (
+            <button
+              ref={editButtonRef}
+              type="button"
+              className="button button--secondary"
+              onClick={() => setTitleDraft(action.title)}
+              disabled={pending}
+            >
+              直す
+            </button>
+          )}
+          <button
+            ref={deleteButtonRef}
+            type="button"
+            className="button button--secondary"
+            onClick={() => setConfirmDelete(true)}
+            disabled={pending || !canDelete || editing}
+            aria-describedby={!canDelete ? deleteTextId : undefined}
+          >
+            削除
+          </button>
+          {!canDelete && (
+            <p id={deleteTextId} className={`muted ${styles.hint}`}>
+              最後の1件は消せません。
+            </p>
+          )}
+        </div>
+      )}
       {error && (
         <p className="form-error" role="alert">
           {error}

@@ -28,6 +28,9 @@ export const MSG_NEED_BOTH_SHARED = "先代・後継者の両方が共有した�
 export const DIAGNOSIS_MAX_TOKENS = 4000;
 const TEXT_MAX = 400;
 const ITEMS_MAX = 8;
+/** 話し合うための問いの数（Notion 診断指示文「2〜3個」）。2個未満は壊れた返事として再送の対象 */
+export const TALK_QUESTIONS_MIN = 2;
+export const TALK_QUESTIONS_MAX = 3;
 
 const IMPORTANCE: readonly Importance[] = ["高", "中", "低"];
 const EXPERTS: readonly Expert[] = ["不要", "銀行", "税理士", "その他"];
@@ -81,10 +84,11 @@ type BasedOn = { predecessor: ThemeKey[]; successor: ThemeKey[] };
 
 // ---- AI への入力 ----
 
+// 「AIが気づいたこと（推測）」は渡さない（Notion 診断指示文の入力は共有済み要約の本人の発言と未確認事項。
+// 推測を根拠にした認識差を作らせないため）
 function summaryForPrompt(s: ThemeSummary) {
   return {
     本人が話したこと: s.statements,
-    AIが気づいたこと_推測: s.ai_observations,
     これから確認したいこと: s.unconfirmed,
   };
 }
@@ -168,8 +172,8 @@ export function parseDiagnosis(v: Record<string, unknown>): Diagnosis | null {
   const talk_questions = arr(v.talk_questions)
     .map((q) => str(q, TEXT_MAX))
     .filter((q): q is string => !!q)
-    .slice(0, 3);
-  if (talk_questions.length === 0) return null;
+    .slice(0, TALK_QUESTIONS_MAX);
+  if (talk_questions.length < TALK_QUESTIONS_MIN) return null;
   if (common.length + gaps.length + to_confirm.length === 0) return null;
   return {
     common: common.slice(0, ITEMS_MAX),

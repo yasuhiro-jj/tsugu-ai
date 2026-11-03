@@ -1,7 +1,7 @@
 import "server-only";
 
-// ③ 90日計画（先代・後継者どちらでも作成・閲覧・更新できる「二人の共通計画」）：
-// POST /api/plan、POST /api/plan/action、getActionPlan。
+// ③ 90日計画（先代・後継者どちらでも作成・閲覧・編集できる「二人の共通計画」）：
+// POST /api/plan、POST・DELETE /api/plan/action、getActionPlan。
 // - 診断が無ければ作らない（409）
 // - AI の出力はアプリが検証：owner は 先代|後継者|二人 のみ、phase は 1-30|31-60|61-90、
 //   due は開始日から見てその phase の範囲内（外れたら phase の末日に丸める）、5〜8件
@@ -292,20 +292,82 @@ export async function createActionPlan(
   });
   // AI を待っている間に共有が取り消された／診断が作り直されていたら、作った計画は残さない（SEC-102）
   const saved = await loadValidRow(deps.db, demoId);
-  if (!saved) throw new ServiceError(409, "診断が変わりました。もう一度90日計画を作ってください");
+  if (!saved) throw new ServiceError(409, MSG_PLAN_CHANGED);
   return saved.state;
 }
 
-// ---- 1件の更新 ----
+// ---- 1件の編集・削除（POST / DELETE /api/plan/action） ----
+// 先代・後継者のどちらでも編集できる（計画は二人のもの）。すべて demo_id で絞り、
+// 書き込みは「読んだときの rev」と「計画を作ったときの診断（diagnosis_created_at）」の両方が変わっていないときだけ行う。
+// どちらかが変わっていたら 409（SEC-102：途中で診断が作り直された計画は書き換えない）。
 
-export async function updateAction(db: Client, demoId: string, body: Record<string, unknown>): Promise<ActionPlanState> {
-  const id = body.id;
+/** 行動の文の上限（AI の出力の検証 parseActionPlan の title と同じ） */
+export const ACTION_TITLE_MAX = 200;
+export const MSG_LAST_ACTION = "90日計画には行動が1件以上必要なため、最後の1件は消せません。先に別の行動を残すか、文を書き換えてください";
+export const MSG_PLAN_CHANGED = "診断が変わりました。もう一度90日計画を作ってください";
+
+const PHASE_LABEL: Record<Phase, string> = { "1-30": "1〜30日目", "31-60": "31〜60日目", "61-90": "61〜90日目" };
+
+/** 制御文字・改行・見えない書式文字（画面の表示を崩すもの）を含むか */
+// \p{Cf} は向きの制御（U+200E/200F・U+202A〜202E・U+2066〜2069・U+061C）、幅のない文字（U+200B〜200D）、U+FEFF などをまとめて含む。U+2028/2029 は行区切り
+const BAD_CHARS = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
+
+function validateActionId(id: unknown): string {
   if (typeof id !== "string" || id.length === 0 || id.length > 40) {
     throw new ServiceError(400, "行動の指定が正しくありません");
   }
-  if (body.status === undefined && body.owner === undefined && body.due === undefined) {
+  return id;
+}
+
+/** 行動の文：前後の空白を取り、空・長すぎ・制御文字は弾く（切り詰めはしない） */
+export function validateActionTitle(v: unknown): string {
+  if (typeof v !== "string") throw new ServiceError(400, "行動の文を入力してください");
+  const t = v.trim();
+  if (t.length === 0) throw new ServiceError(400, "行動の文を入力してください");
+  if (BAD_CHARS.test(t)) throw new ServiceError(400, "行動の文に使えない文字（改行・制御文字など）が含まれています");
+  if (Array.from(t).length > ACTION_TITLE_MAX) {
+    throw new ServiceError(400, `行動の文は${ACTION_TITLE_MAX}文字以内にしてください`);
+  }
+  return t;
+}
+
+const byDue = (x: PlanAction, y: PlanAction) => (x.due < y.due ? -1 : x.due > y.due ? 1 : 0);
+
+/** 有効な計画を読み、change で作った行動の一覧を条件つきで保存する */
+async function mutateActions(
+  db: Client,
+  demoId: string,
+  change: (state: ActionPlanState) => PlanAction[],
+): Promise<ActionPlanState> {
+  const loaded = await loadValidRow(db, demoId);
+  if (!loaded) throw new ServiceError(404, "90日計画がまだありません");
+  const actions = change(loaded.state);
+  actions.sort(byDue);
+  const rs = await db.execute({
+    sql: `UPDATE action_plans SET actions = ?, rev = rev + 1, updated_at = ?
+          WHERE demo_id = ? AND rev = ? AND diagnosis_created_at = ?
+            AND diagnosis_created_at = (SELECT created_at FROM diagnoses WHERE diagnoses.demo_id = ?)`,
+    args: [JSON.stringify(actions), nowIso(), demoId, loaded.rev, loaded.diagnosisCreatedAt, demoId],
+  });
+  if (rs.rowsAffected !== 1) {
+    // 書き込めなかった理由を見分ける：診断が変わった（作り直し・取り消し）なら作り直しを案内、それ以外は重なり
+    const diag = await getDiagnosisFrom(db, demoId);
+    const now = await loadRow(db, demoId);
+    if (!diag || !now || diag.createdAt !== loaded.diagnosisCreatedAt || now.diagnosisCreatedAt !== loaded.diagnosisCreatedAt) {
+      throw new ServiceError(409, MSG_PLAN_CHANGED);
+    }
+    throw new ServiceError(409, MSG_CONFLICT);
+  }
+  return getActionPlanFrom(db, demoId);
+}
+
+/** POST /api/plan/action：body { id, title?, status?, owner?, due? } のうち指定したものだけ変える */
+export async function updateAction(db: Client, demoId: string, body: Record<string, unknown>): Promise<ActionPlanState> {
+  const id = validateActionId(body.id);
+  if (body.title === undefined && body.status === undefined && body.owner === undefined && body.due === undefined) {
     throw new ServiceError(400, "変更する内容を指定してください");
   }
+  const title = body.title === undefined ? undefined : validateActionTitle(body.title);
   if (body.status !== undefined && !STATUSES.includes(body.status as ActionStatus)) {
     throw new ServiceError(400, "状態の指定が正しくありません");
   }
@@ -316,29 +378,34 @@ export async function updateAction(db: Client, demoId: string, body: Record<stri
     throw new ServiceError(400, "期限は YYYY-MM-DD の形で指定してください");
   }
 
-  const loaded = await loadValidRow(db, demoId);
-  if (!loaded) throw new ServiceError(404, "90日計画がまだありません");
-  const { state, rev } = loaded;
-  const idx = state.actions.findIndex((a) => a.id === id);
-  if (idx < 0) throw new ServiceError(404, "その行動は見つかりませんでした");
-  const a = { ...state.actions[idx] };
-  if (body.status !== undefined) a.status = body.status as ActionStatus;
-  if (body.owner !== undefined) a.owner = body.owner as Owner;
-  if (body.due !== undefined) {
-    const phase = phaseOf(state.startDate!, body.due as string);
-    if (!phase) throw new ServiceError(400, "期限は開始日から90日以内の日付にしてください");
-    a.due = body.due as string;
-    a.phase = phase;
-  }
-  const actions = [...state.actions];
-  actions[idx] = a;
-  actions.sort((x, y) => (x.due < y.due ? -1 : x.due > y.due ? 1 : 0));
-  const rs = await db.execute({
-    sql: `UPDATE action_plans SET actions = ?, rev = rev + 1, updated_at = ? WHERE demo_id = ? AND rev = ?`,
-    args: [JSON.stringify(actions), nowIso(), demoId, rev],
+  return mutateActions(db, demoId, (state) => {
+    const idx = state.actions.findIndex((a) => a.id === id);
+    if (idx < 0) throw new ServiceError(404, "その行動は見つかりませんでした");
+    const a = { ...state.actions[idx] };
+    if (title !== undefined) a.title = title;
+    if (body.status !== undefined) a.status = body.status as ActionStatus;
+    if (body.owner !== undefined) a.owner = body.owner as Owner;
+    if (body.due !== undefined) {
+      // 期限はその行動の期間の中だけ（期間をまたいで別の期間へ移さない）
+      const due = body.due as string;
+      const r = phaseRange(state.startDate!, a.phase);
+      if (due < r.from || due > r.to) {
+        throw new ServiceError(400, `期限は${PHASE_LABEL[a.phase]}（${r.from}〜${r.to}）の中の日付にしてください`);
+      }
+      a.due = due;
+    }
+    const actions = [...state.actions];
+    actions[idx] = a;
+    return actions;
   });
-  if (rs.rowsAffected !== 1) {
-    throw new ServiceError(409, MSG_CONFLICT);
-  }
-  return getActionPlanFrom(db, demoId);
+}
+
+/** DELETE /api/plan/action：body { id }。最後の1件は消せない */
+export async function deleteAction(db: Client, demoId: string, body: Record<string, unknown>): Promise<ActionPlanState> {
+  const id = validateActionId(body.id);
+  return mutateActions(db, demoId, (state) => {
+    if (!state.actions.some((a) => a.id === id)) throw new ServiceError(404, "その行動は見つかりませんでした");
+    if (state.actions.length <= 1) throw new ServiceError(400, MSG_LAST_ACTION);
+    return state.actions.filter((a) => a.id !== id);
+  });
 }

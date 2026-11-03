@@ -1,0 +1,50 @@
+/* 90日計画の行動1件の「担当・期限・状態」を並べる（globals.css の .action__status を補う） */
+
+.edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.label {
+  min-width: 3em;
+}
+
+.hint {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 480px) {
+  .grow {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+/* 行動の文の編集欄 */
+.titleForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 8px;
+}
+
+.titleLabel {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.titleInput {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ［直す］［削除］と削除の確認 */
+.rowTools {
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 8px;
+}

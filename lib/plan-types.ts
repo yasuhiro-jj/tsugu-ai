@@ -103,6 +103,7 @@ export type ActionPlanState = {
 // POST /api/learning/quiz                   body: { courseId, answers: Record<number, string> } → { ok, result: { score, correct: Record<number, boolean>, wrongArticleNos, status }, state: LearningState }  後継者のみ
 // POST /api/learning/explain                body: { courseId, questionNo, chosen } → { ok, explanation: string }  間違えた問題の解説（AI）
 // POST /api/plan                            body: { startDate?: string }   → { ok, state: ActionPlanState }  90日計画の下書き作成（作り直し）
-// POST /api/plan/action                     body: { id, status?: ActionStatus, owner?, due? } → { ok, state: ActionPlanState }
+// POST /api/plan/action                     body: { id, title?, status?: ActionStatus, owner?, due? } → { ok, state: ActionPlanState }  due はその行動の期間内だけ
+// DELETE /api/plan/action                   body: { id }                   → { ok, state: ActionPlanState }  最後の1件は消せない
 // サーバーコンポーネント用（画面は lib から直接呼ぶ）：
 //   getDiagnosis(demoId) / getFinancialSummary() / getCourses() / getCourse(id) / getLearningState(demoId) / getActionPlan(demoId)

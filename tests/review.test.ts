@@ -156,7 +156,7 @@ describe("REV-005：学習プランの作成", () => {
     common: [{ point: "続けたい", evidence: "e" }],
     gaps: [{ theme: "資金繰り", point: "p", senior_said: "s", successor_said: "t", numbers: "n", importance: "高" }],
     to_confirm: [],
-    talk_questions: ["問い"],
+    talk_questions: ["問い1", "問い2"],
   };
   const PLAN = {
     plan: [{ order: 1, course_id: "cashflow", week: 1, reason: "理由", linked_gap: "g" }],
