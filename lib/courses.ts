@@ -250,6 +250,20 @@ const COURSE_DATA: readonly CourseData[] = [
 
 export const COURSE_IDS: readonly CourseId[] = COURSE_DATA.map((c) => c.id);
 
+/**
+ * 講座ごとの「つながる認識差のキーワード」（学習プランの並べ替えに使う。lib/learning.ts）。
+ * 根拠：Notion「学習講座コンテンツ v1」講座一覧の「診断とのつながり」列
+ * - 1. 資金繰りの基本 ↔ 資金繰りの認識差（返済・手元資金）
+ * - 2. 原価率と棚卸しの基本 ↔ 原価の見え方の認識差
+ * - 3. 試算表の見方 ↔ 経営状態を数字で説明する力
+ * 認識差の theme は AI が書く自由な文字列なので、theme か point にキーワードを含むかで判定する。
+ */
+export const COURSE_GAP_KEYWORDS: Readonly<Record<CourseId, readonly string[]>> = {
+  cashflow: ["資金繰り", "返済", "借入", "手元"],
+  costrate: ["原価", "棚卸", "仕入"],
+  trialbalance: ["試算表", "もうけ", "利益", "数字"],
+};
+
 export function isCourseId(v: unknown): v is CourseId {
   return typeof v === "string" && (COURSE_IDS as readonly string[]).includes(v);
 }

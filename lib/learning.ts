@@ -3,6 +3,7 @@ import "server-only";
 // ② 学習プラン（後継者のみ）：POST /api/learning/plan・/quiz・/explain、getLearningState。
 // - すべて demo_id で絞る（役割の確認は Route Handler 側で「後継者のみ」）
 // - 講座は lib/courses.ts の一覧からだけ。AI が一覧外の course_id を返したら除外、完了済みも除外、
+//   診断があるときは認識差の重要度で並べ替え（rankCoursesByDiagnosis）、
 //   「復習をおすすめ」の講座を先頭へ並べ替え、order / week はアプリが振り直す
 // - 採点はルールベース（lib/courses.ts）。講座1（cashflow）を完了したら Lv1 → Lv2
 // - 解説：正誤はアプリが判定し、AI には正解と記事本文だけを渡して説明させる
@@ -12,6 +13,7 @@ import type { Client } from "@libsql/client";
 import type {
   CourseId,
   CourseProgress,
+  Diagnosis,
   CourseProgressStatus,
   LearningPlan,
   LearningState,
@@ -20,6 +22,7 @@ import { MSG_CONFLICT, ServiceError } from "./errors";
 import { getDb } from "./db";
 import { DEMO_PROFILES } from "./demo-profiles";
 import {
+  COURSE_GAP_KEYWORDS,
   COURSE_IDS,
   getCourses,
   getQuestionForExplain,
@@ -233,14 +236,46 @@ export const LEARNING_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const IMPORTANCE_SCORE: Record<Diagnosis["gaps"][number]["importance"], number> = { 高: 3, 中: 2, 低: 1 };
+
+/**
+ * 講座の点数＝その講座のキーワード（COURSE_GAP_KEYWORDS）を theme か point に含む認識差の重要度の最大値
+ * （高=3・中=2・低=1・該当なし=0）。
+ * 根拠：Notion「学習講座コンテンツ v1」の「診断とのつながり」（①資金繰り ②原価 ③試算表）と、
+ * Notion デモ会社設定「資金繰りの認識差 → 後継者の学習プランで『資金繰りの基本』が最優先に」。
+ * 順番を AI 任せにすると、希望欄や AI が書いた theme の言い方で入れ替わることがあったため、アプリが決める。
+ */
+export function courseGapScore(courseId: CourseId, diagnosis: Diagnosis): number {
+  const keywords = COURSE_GAP_KEYWORDS[courseId];
+  let best = 0;
+  for (const g of diagnosis.gaps) {
+    const text = `${g.theme ?? ""} ${g.point ?? ""}`;
+    if (keywords.some((k) => text.includes(k))) best = Math.max(best, IMPORTANCE_SCORE[g.importance] ?? 0);
+  }
+  return best;
+}
+
+/** 点数の高い順、同点なら講座一覧の順（COURSE_IDS：①→②→③）に並べる。AI が書いた reason などは変えない */
+function rankCoursesByDiagnosis<T extends { course_id: CourseId }>(items: T[], diagnosis: Diagnosis): T[] {
+  const score = new Map(COURSE_IDS.map((id) => [id, courseGapScore(id, diagnosis)]));
+  return [...items].sort(
+    (a, b) => score.get(b.course_id)! - score.get(a.course_id)! || COURSE_IDS.indexOf(a.course_id) - COURSE_IDS.indexOf(b.course_id),
+  );
+}
+
 /**
  * AI のプランを検証・整形する。
  * - 一覧外・完了済み・重複の course_id は除外
- * - 「復習をおすすめ」を先頭へ（それ以外は AI の順番のまま）
+ * - 診断があるときだけ、認識差の重要度で並べ替え（rankCoursesByDiagnosis）。診断が無いときは AI の順番のまま
+ * - 「復習をおすすめ」を先頭へ（上の並べ替えより優先）
  * - order / week は 1 から振り直す（1週間に1講座）
  * - 未完了の講座が残っているのにプランが空なら null（再送の対象）
  */
-export function parseLearningPlan(v: Record<string, unknown>, progress: CourseProgress[]): LearningPlan | null {
+export function parseLearningPlan(
+  v: Record<string, unknown>,
+  progress: CourseProgress[],
+  diagnosis: Diagnosis | null = null,
+): LearningPlan | null {
   const message = str(v.message, 600);
   if (!message || !Array.isArray(v.plan)) return null;
   const statusOf = new Map(progress.map((p) => [p.courseId, p.status]));
@@ -256,8 +291,9 @@ export function parseLearningPlan(v: Record<string, unknown>, progress: CoursePr
     seen.add(id);
     picked.push({ course_id: id, reason: str(o.reason, 300) ?? "", linked_gap: str(o.linked_gap, 200) ?? "" });
   }
-  const review = picked.filter((p) => statusOf.get(p.course_id) === "復習をおすすめ");
-  const others = picked.filter((p) => statusOf.get(p.course_id) !== "復習をおすすめ");
+  const ranked = diagnosis ? rankCoursesByDiagnosis(picked, diagnosis) : picked;
+  const review = ranked.filter((p) => statusOf.get(p.course_id) === "復習をおすすめ");
+  const others = ranked.filter((p) => statusOf.get(p.course_id) !== "復習をおすすめ");
   const ordered = [...review, ...others];
   const remaining = COURSE_IDS.filter((id) => statusOf.get(id) !== "完了");
   if (remaining.length > 0 && ordered.length === 0) return null;
@@ -311,7 +347,7 @@ export async function createLearningPlan(
       schema: LEARNING_SCHEMA as unknown as Record<string, unknown>,
       maxTokens: LEARNING_MAX_TOKENS,
     },
-    (v) => parseLearningPlan(v, progress),
+    (v) => parseLearningPlan(v, progress, diag?.diagnosis ?? null),
   );
 
   const stored: StoredPlan = { plan, createdAt: nowIso(), usedDiagnosis: diag !== null };
