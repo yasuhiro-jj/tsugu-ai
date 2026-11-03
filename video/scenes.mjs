@@ -1,4 +1,5 @@
-// 3分デモ動画の場面の割り当て（video/storyboard.md の「秒単位の台本」を 175 秒に整えたもの）。
+// 3分デモ動画の場面の割り当て（2026-11-04：オーナーの声の長さに合わせて s02・s03 を延ばし、s08・s09 を短くした）
+//（video/storyboard.md の「秒単位の台本」を 175 秒に整えたもの）。
 // cards.mjs・edit.mjs が読む。`node video/scenes.mjs` で narration.txt（原稿と読み）を書き出す。
 //
 // 時刻は完成した動画の先頭からの秒数。captions の at / to は場面の先頭からの秒数。
@@ -21,23 +22,23 @@ export const SCENES = [
     },
   },
   {
-    id: "s02", start: 10, dur: 12, kind: "card", card: ["stat", "head"], cardSplit: 6,
-    captions: [{ at: 0, to: 12, text: "約半数の会社で、後継者が「いない」「未定」" }],
+    id: "s02", start: 10, dur: 16.5, kind: "card", card: ["stat", "head"], cardSplit: 8,
+    captions: [{ at: 0, to: 16.5, text: "約半数の会社で、後継者が「いない」「未定」" }],
     narration: {
       text: "日本では約半数の会社で、後継者が決まっていません。借入の返済も、仕入れの口約束も、先代の頭の中だけ。後継者は、何を知らないのかも分かりません。",
       yomi: "日本では約半数の会社で、後継者が決まっていません。かりいれの返済も、仕入れのくちやくそくも、先代の頭の中だけ。後継者は、何を知らないのかも分かりません。",
     },
   },
   {
-    id: "s03", start: 22, dur: 8, kind: "screen",
-    captions: [{ at: 0, to: 8, text: "TSUGU AI ― 先代と後継者が、別々に AI と話す" }],
+    id: "s03", start: 26.5, dur: 9.5, kind: "screen",
+    captions: [{ at: 0, to: 9.5, text: "TSUGU AI ― 先代と後継者が、別々に AI と話す" }],
     narration: {
       text: "TSUGU AI では、先代と後継者が、それぞれ別々に Claude と面談します。",
       yomi: "ツグ エーアイでは、先代と後継者が、それぞれ別々に、クロードと面談します。",
     },
   },
   {
-    id: "s04", start: 30, dur: 24, kind: "screen",
+    id: "s04", start: 36, dur: 24, kind: "screen",
     captions: [{ at: 0, to: 24, text: "Claude が一問ずつ、責めずに聞く" }],
     narration: {
       text: "Claude は相手の言葉を受け止め、一問ずつ聞いていきます。答えはテーマごとに要約され、本人が確認します。",
@@ -45,7 +46,7 @@ export const SCENES = [
     },
   },
   {
-    id: "s05", start: 54, dur: 12, kind: "screen",
+    id: "s05", start: 60, dur: 12, kind: "screen",
     captions: [{ at: 0, to: 12, text: "共有しない回答は、内容も存在も相手に見えない" }],
     narration: {
       text: "相手に見せるかは、テーマごとに本人が選びます。共有しない気持ちは、内容も、あることさえ、相手には伝わりません。",
@@ -53,7 +54,7 @@ export const SCENES = [
     },
   },
   {
-    id: "s06", start: 66, dur: 19, kind: "screen",
+    id: "s06", start: 72, dur: 19, kind: "screen",
     captions: [{ at: 0, to: 19, text: "知らないことも、迷いも、話していい" }],
     narration: {
       text: "後継者も同じように答えます。知らないことも、迷いも、話して大丈夫です。",
@@ -61,7 +62,7 @@ export const SCENES = [
     },
   },
   {
-    id: "s07", start: 85, dur: 29, kind: "screen",
+    id: "s07", start: 91, dur: 29, kind: "screen",
     // 後半（お店の数字を見せるところ）で字幕を替える。替える秒数は edit.mjs が録画に合わせて上書きする
     captions: [
       { at: 0, to: 15, text: "二人が共有した回答だけで、Claude が認識の違いを示す" },
@@ -73,16 +74,16 @@ export const SCENES = [
     },
   },
   {
-    id: "s08", start: 114, dur: 24, kind: "screen",
-    captions: [{ at: 0, to: 24, text: "診断を受けて、学ぶ順番が変わる" }],
+    id: "s08", start: 120, dur: 21, kind: "screen",
+    captions: [{ at: 0, to: 21, text: "診断を受けて、学ぶ順番が変わる" }],
     narration: {
       text: "診断を受けて、後継者の学ぶ順番が変わりました。まず、資金繰りの基本から。",
       yomi: "診断を受けて、後継者の学ぶ順番が変わりました。まず、しきんぐりの基本から。",
     },
   },
   {
-    id: "s09", start: 138, dur: 24, kind: "screen",
-    captions: [{ at: 0, to: 24, text: "二人でできる、具体的な90日の行動" }],
+    id: "s09", start: 141, dur: 21, kind: "screen",
+    captions: [{ at: 0, to: 21, text: "二人でできる、具体的な90日の行動" }],
     narration: {
       text: "そして、二人で取り組む90日の行動計画。誰が、何を、いつまでに。決めるのは、お二人です。",
       yomi: "そして、二人で取り組む、きゅうじゅうにちの行動計画。誰が、何を、いつまでに。決めるのは、お二人です。",

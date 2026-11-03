@@ -157,10 +157,11 @@ function screenPlan(id) {
     p.push(clip(l.start, l.click + 0.5, 2.6, null, "学習プラン→作り直す"));
     p.push(clip(l.click + 0.5, l.result + 0.3, 2.5, null, "AI を待つ", true));
     p.push(clip(l.result + 0.3, l.compare, 1.5, null, "比較へスクロール"));
-    p.push(clip(l.compare, l.compare + 8.8, 8.8, full, "前のプランと今のプラン"));
+    // s08 は 21 秒（オーナーの声に合わせて 24 秒から短縮。2026-11-04）
+    p.push(clip(l.compare, l.compare + 7.3, 7.3, full, "前のプランと今のプラン"));
     // 同じ静止した画面を、今のプランの1番目に寄せてもう一度見せる（画面は録画のまま）
     const both = { x: l.prevFirstRect.x, y: Math.min(l.prevFirstRect.y, l.curFirstRect.y), w: l.curFirstRect.x + l.curFirstRect.w - l.prevFirstRect.x, h: 1 };
-    p.push(clip(l.compare + 0.2, l.compare + 8.8, 8.6, zoomOn(both, { w: 1100, topFrac: 0.12 }), "1番目どうしを拡大"));
+    p.push(clip(l.compare + 0.2, l.compare + 7.3, 7.1, zoomOn(both, { w: 1100, topFrac: 0.12 }), "1番目どうしを拡大"));
   }
   if (id === "s09") {
     const c = S.plan;
