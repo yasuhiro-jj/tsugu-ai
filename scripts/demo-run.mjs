@@ -14,6 +14,8 @@
 // 5. 学習プランを作り直し、前のプラン／今のプランの比較表示を確かめる
 // 6. 90日計画画面で「90日計画の下書きを作る」
 // 7. 診断・学習・90日計画を幅375pxでも撮り、横のはみ出しを調べる
+// 8. 追加の確認（失敗しても止めずに記録。NG があれば終了コード1）：伸びる余地の欄／資料（8章・銀行・下書き）／
+//    後継者で AI参謀と講座の質問／その3画面の幅375px／先代に切り替えて AI参謀に後継者の会話が出ないこと
 // 手順ごとに画面全体を撮る。画面にエラーが出たら（AI の一時エラーなど）少し待って同じ操作をやり直し、回数を数える。
 // 最後に「デモをやり直す」と同じ API でこのデモのデータを消す（KEEP_DATA=1 なら残す）。
 
@@ -284,6 +286,174 @@ async function mobileCheck(name, url) {
   return { name, file, ...r };
 }
 
+// ---- 追加の確認（伸びる余地・資料・AI参謀・講座の質問・AI参謀の漏えい）。失敗しても止めずに記録する ----
+const extra = []; // { name, ok, detail }
+const quotes = {}; // 報告用の引用
+const ASSERTIVE = /通ります|必ず|間違いなく|確実に|保証します|借りられます|融資が受けられ|継ぐべき|継がないべき/;
+
+async function check(name, fn) {
+  const t0 = Date.now();
+  try {
+    const r = await fn();
+    const ok = r?.ok !== false;
+    extra.push({ name, ok, detail: r?.detail ?? "" });
+    console.log(`    ${ok ? "OK " : "NG "} ${name}${r?.detail ? `：${r.detail}` : ""}（${Math.round((Date.now() - t0) / 1000)}秒）`);
+  } catch (err) {
+    extra.push({ name, ok: false, detail: `途中で失敗：${err instanceof Error ? err.message.split("\n")[0] : String(err)}` });
+    console.log(`    NG  ${name}：途中で失敗 ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);
+    await shot(`failed-${name.replace(/[^\w-]/g, "")}`).catch(() => {});
+  }
+}
+
+async function switchRole(role) {
+  await page.goto(BASE + "/", { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: `${ROLE_LABEL[role]}として入る` }).click();
+  await page.waitForURL(/\/interview$/, { timeout: 30_000 });
+}
+
+let advisorSent = null;
+
+async function extraSteps() {
+  console.log("--- 追加の確認");
+  // a. 比較画面の「伸びる余地」
+  await check("a 伸びる余地の欄", async () => {
+    await page.goto(BASE + "/compare", { waitUntil: "networkidle" });
+    const sec = page.locator("section[aria-labelledby=upside-title]");
+    if ((await sec.count()) === 0) return { ok: false, detail: "欄が出ていない" };
+    const text = (await sec.textContent()) ?? "";
+    const has122 = /[+＋]\s*122/.test(text);
+    const has358 = /[+＋]\s*358/.test(text);
+    await sec.scrollIntoViewIfNeeded();
+    await shot("upside-page");
+    await sec.screenshot({ path: path.join(OUT, `${String(++shotNo).padStart(2, "0")}-upside-section.png`) });
+    return { ok: has122 && has358, detail: `+122: ${has122 ? "あり" : "なし"}／+358: ${has358 ? "あり" : "なし"}` };
+  });
+
+  // b. 資料（決算サマリー8章・銀行向け相談用資料）
+  await check("b 資料を作る", async () => {
+    await page.goto(BASE + "/report", { waitUntil: "networkidle" });
+    await shot("report-before");
+    await pressAndWait({
+      where: "資料",
+      button: () => page.getByRole("button", { name: "資料を作る" }),
+      done: "#report-ch8",
+      errorSel: "section[aria-labelledby=report-create-title] .form-error",
+    });
+    const r = await page.evaluate(() => {
+      const heads = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => document.getElementById(`report-ch${n}`)?.textContent.trim() ?? null);
+      const ch8 = document.getElementById("report-ch8")?.closest("section");
+      const h4 = ch8 ? [...ch8.querySelectorAll("h4")].find((h) => h.textContent.includes("銀行に相談すること")) : null;
+      const ul = h4?.nextElementSibling;
+      const bank = ul && ul.tagName === "UL" ? [...ul.querySelectorAll("li")].map((li) => li.textContent.trim()) : [];
+      const body = document.body.innerText;
+      const bankDoc = document.querySelector("section[aria-labelledby=report-bank-title]")?.textContent ?? "";
+      return { heads, bank, ch8: ch8?.innerText ?? "", draft: body.includes("下書き"), all: (ch8?.innerText ?? "") + bankDoc };
+    });
+    quotes.ch8 = r.ch8;
+    quotes.reportAssertive = (r.all.match(new RegExp(ASSERTIVE.source, "g")) ?? []).join("、");
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: path.join(OUT, `${String(++shotNo).padStart(2, "0")}-report-top.png`) });
+    await page.locator("#report-ch8").evaluate((el) => el.scrollIntoView());
+    await page.locator("section:has(> #report-ch8)").screenshot({ path: path.join(OUT, `${String(++shotNo).padStart(2, "0")}-report-ch8.png`) });
+    await shot("report-full");
+    const headsOk = r.heads.every(Boolean);
+    return {
+      ok: headsOk && r.bank.length > 0 && r.draft,
+      detail: `8章の見出し: ${headsOk ? "そろっている" : `欠け（${r.heads.map((h, i) => (h ? "" : `第${i + 1}章`)).filter(Boolean).join("・")}）`}／第8章の銀行の箇条書き: ${r.bank.length}件／「下書き」表示: ${r.draft ? "あり" : "なし"}／断定表現の候補: ${quotes.reportAssertive || "なし"}`,
+    };
+  });
+
+  // c. 後継者で AI参謀（例のボタンを1つ押して送る）
+  await check("c AI参謀（後継者）", async () => {
+    await page.goto(BASE + "/advisor", { waitUntil: "networkidle" });
+    const chat = page.locator("section[aria-labelledby=advisor-chat-title]");
+    const ex = chat.locator("ul li button").first();
+    advisorSent = ((await ex.textContent()) ?? "").trim();
+    await ex.click();
+    await pressAndWait({
+      where: "AI参謀",
+      button: () => chat.locator(".chat__form button[type=submit]"),
+      done: "section[aria-labelledby=advisor-chat-title] .chat__log .bubble--ai:not(.bubble--thinking)",
+      errorSel: "section[aria-labelledby=advisor-chat-title] .chat__form .form-error",
+    });
+    const ai = chat.locator(".chat__log .bubble--ai:not(.bubble--thinking)").last();
+    const text = ((await ai.innerText()) ?? "").trim();
+    const hasPoints = text.includes("整理した論点");
+    const consult = (await ai.locator(".badge--expert").count()) > 0 ? ((await ai.locator(".badge--expert").first().textContent()) ?? "").trim() : null;
+    quotes.advisor = text;
+    // 漏えい確認の目印：返事の本文の先頭30文字（読み上げ用の「AI参謀：」を含まない）
+    quotes.advisorFirst = ((await ai.locator("p").first().textContent()) ?? "").trim().slice(0, 30);
+    quotes.advisorAssertive = (text.match(new RegExp(ASSERTIVE.source, "g")) ?? []).join("、");
+    await shot("advisor-successor");
+    return {
+      ok: text.length > 0 && hasPoints && !!consult,
+      detail: `送った文「${advisorSent}」／返事: あり／論点: ${hasPoints ? "あり" : "なし"}／相談先の札: ${consult ?? "なし"}／断定表現の候補: ${quotes.advisorAssertive || "なし"}`,
+    };
+  });
+
+  // d. 後継者で講座の記事1に質問する
+  await check("d 講座の記事1に質問", async () => {
+    await page.goto(BASE + "/learning/cashflow", { waitUntil: "networkidle" });
+    const panel = page.locator("#article-1 + div");
+    await panel.getByRole("button", { name: "この記事についてAIに質問する" }).click();
+    const ex = panel.locator("ul li button").first();
+    const q = ((await ex.textContent()) ?? "").trim();
+    await ex.click();
+    await pressAndWait({
+      where: "講座の質問",
+      button: () => panel.locator("form button[type=submit]"),
+      done: "#article-1 + div .explain",
+      errorSel: "#article-1 + div .form-error",
+    });
+    const ans = ((await panel.locator(".explain").innerText()) ?? "").trim();
+    quotes.ask = ans;
+    await panel.scrollIntoViewIfNeeded();
+    await shot("course-ask");
+    return { ok: ans.length > 0, detail: `質問「${q}」／答え: ${ans ? "出た" : "出ない"}` };
+  });
+
+  // f. b〜d の画面を幅375pxで
+  await check("f 幅375px（資料・AI参謀・講座）", async () => {
+    const rs = [];
+    for (const [name, url] of [
+      ["report", "/report"],
+      ["advisor", "/advisor"],
+      ["course-cashflow", "/learning/cashflow"],
+    ]) {
+      rs.push(await mobileCheck(name, url));
+    }
+    result.mobile.push(...rs);
+    const bad = rs.filter((m) => m.overflow);
+    return { ok: bad.length === 0, detail: bad.length ? bad.map((m) => `${m.name}: ${m.elements.join("、")}`).join("／") : "3画面ともはみ出しなし" };
+  });
+
+  // e. 先代に切り替えて AI参謀を開き、後継者の会話が出ないこと（受け取った応答すべてを調べる）
+  await check("e 先代の AI参謀に後継者の会話が出ない", async () => {
+    if (!advisorSent) return { ok: false, detail: "c が失敗したため確認できない" };
+    await switchRole("predecessor");
+    const bodies = [];
+    const pend = [];
+    const onRes = (res) => pend.push(res.text().then((b) => bodies.push({ url: res.url(), b })).catch(() => {}));
+    page.on("response", onRes);
+    await page.goto(BASE + "/advisor", { waitUntil: "networkidle" });
+    await Promise.all(pend);
+    page.off("response", onRes);
+    const rsc = await ctx.request.get(BASE + "/advisor", { headers: { RSC: "1" } });
+    bodies.push({ url: "/advisor (RSC)", b: await rsc.text() });
+    const marker = quotes.advisorFirst ?? "";
+    const hits = bodies.filter((x) => x.b.includes(advisorSent) || (marker && x.b.includes(marker))).map((x) => x.url.replace(BASE, ""));
+    // 例の文はボタンとして先代側にも出るため、会話の欄（.chat__log）の中だけを画面で見る
+    const inLog = await page.locator("section[aria-labelledby=advisor-chat-title] .chat__log").innerText().catch(() => "");
+    const logHit = inLog.includes(advisorSent);
+    const aiHit = marker ? bodies.some((x) => x.b.includes(marker)) : false;
+    await shot("advisor-predecessor");
+    return {
+      ok: !logHit && !aiHit,
+      detail: `会話の欄に後継者の文: ${logHit ? "出た" : "出ない"}／応答に後継者への返事: ${aiHit ? "出た" : "出ない"}${hits.length ? `（送った文と同じ文字列を含む応答: ${hits.join(", ")}。例のボタンの可能性）` : ""}`,
+    };
+  });
+}
+
 const DIR_KEYS = [
   ["keep", "守りたいこと"],
   ["improve", "変えられること"],
@@ -363,6 +533,8 @@ try {
       result.mobile.push(await mobileCheck(name, url));
     }
   });
+
+  await step("追加の確認（伸びる余地・資料・AI参謀・講座の質問）", extraSteps);
 } catch (err) {
   exitCode = 2;
   console.error("途中で止まりました:", err instanceof Error ? err.message : String(err));
@@ -377,6 +549,8 @@ try {
 const afterOk = result.firstAfter === EXPECT.firstCourseTitle;
 const beforeSame = result.firstBefore === EXPECT.firstCourseTitle;
 if (exitCode === 0 && !(result.cashflowGap && afterOk && result.compared)) exitCode = 1;
+// 追加の確認に NG が1つでもあれば「通ったが期待と違う」
+if (exitCode === 0 && extra.some((x) => !x.ok)) exitCode = 1;
 const smallTry = result.actions.filter((a) => /試/.test(a.title));
 const tryNewLunch = (result.directions.tryNew ?? []).some((t) => /ランチ|SNS/.test(t));
 const dir = (k) => result.directions[k] ?? [];
@@ -394,6 +568,10 @@ const lines = [
   ...result.mobile.map(
     (m) => `幅375px ${m.name}: ${m.overflow ? `はみ出しあり（scrollWidth ${m.sw} > ${m.cw}）${m.elements.join("、")}` : "はみ出しなし"}  ${m.file}`,
   ),
+  ...extra.map((x) => `追加 ${x.ok ? "OK" : "NG"} ${x.name}: ${x.detail}`),
+  ...(quotes.ch8 ? [`  第8章の本文: ${quotes.ch8.replace(/\s*\n\s*/g, " ／ ").slice(0, 400)}`] : []),
+  ...(quotes.advisor ? [`  AI参謀の返事: ${quotes.advisor.replace(/\s*\n\s*/g, " ／ ").slice(0, 500)}`] : []),
+  ...(quotes.ask ? [`  講座の質問の答え: ${quotes.ask.replace(/\s*\n\s*/g, " ／ ").slice(0, 300)}`] : []),
   `所要時間: ${timings.map((t) => `${t.name} ${t.sec}秒`).join(" ／ ")}（合計 ${timings.reduce((a, t) => a + t.sec, 0)}秒）`,
   `AI の一時エラーなどでやり直した回数: ${retries}${retryLog.length ? `（${retryLog.join(" ／ ")}）` : ""}`,
   ...(stopShot ? [`止まった画面: ${stopShot}`] : []),
