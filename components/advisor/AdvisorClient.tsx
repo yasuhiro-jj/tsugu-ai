@@ -74,6 +74,13 @@ export default function AdvisorClient({ initialState, suggestions }: Props) {
     }
   }
 
+  /** ［もう一度話す］：入力欄を空にする（続けて届く音声がすぐ空の欄に足されるよう、ref も先に空にする） */
+  function clearForVoice() {
+    draftRef.current = "";
+    setVoiceNotice(null);
+    setDraft("");
+  }
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "nearest" });
   }, [state.messages.length, pendingText]);
@@ -238,7 +245,12 @@ export default function AdvisorClient({ initialState, suggestions }: Props) {
           <button type="submit" className="button" disabled={!canSend} aria-busy={sending}>
             {sending ? `考えています…（${seconds}秒）` : "送信"}
           </button>
-          <MicButton onText={handleVoiceText} disabled={busy || noTurns} />
+          <MicButton
+            onText={handleVoiceText}
+            disabled={busy || noTurns}
+            hasText={draft.length > 0}
+            onClear={clearForVoice}
+          />
         </div>
         {error && (
           <p className="form-error" role="alert">

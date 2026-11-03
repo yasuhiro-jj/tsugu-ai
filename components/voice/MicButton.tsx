@@ -8,6 +8,7 @@ import {
   type VoiceRecognitionEvent,
 } from "./speech-types";
 import VolumeMeter from "./VolumeMeter";
+import { correctTranscript } from "./corrections";
 import styles from "./MicButton.module.css";
 
 type Props = {
@@ -17,7 +18,14 @@ type Props = {
   disabled?: boolean;
   /** 周りのボタンが小さいとき "small"（.button--small をそろえて付ける） */
   size?: "normal" | "small";
+  /** 入力欄に文字があるか（［もう一度話す］を出すかどうかに使う） */
+  hasText?: boolean;
+  /** 入力欄を空にする。渡したときだけ［もう一度話す］を出す */
+  onClear?: () => void;
 };
+
+const REDO_HELP = "入力欄を空にして、最初から話し直せます";
+const REDO_CONFIRM = "入力欄の文を消して、最初から話し直しますか？";
 
 const MIC_DENIED = "マイクが使えませんでした。ブラウザの設定でマイクを許可してください。";
 const STOPPED = "聞き取りが止まりました。もう一度押してください。";
@@ -51,7 +59,7 @@ function errorMessage(code: string): string | null {
  * 途中の結果はボタンの近くに灰色で見せるだけで、入力欄には確定してから足す。
  * 利用者が止めたときは、残っている途中の文を足してから認識を打ち切り、その後に届く結果は捨てる（二重に入らない）。
  */
-export default function MicButton({ onText, disabled = false, size = "normal" }: Props) {
+export default function MicButton({ onText, disabled = false, size = "normal", hasText = false, onClear }: Props) {
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
   const [interim, setInterim] = useState("");
@@ -63,6 +71,7 @@ export default function MicButton({ onText, disabled = false, size = "normal" }:
   const lastErrorRef = useRef<string | null>(null);
   const onTextRef = useRef(onText);
   const noteId = useId();
+  const micRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     onTextRef.current = onText;
@@ -98,7 +107,7 @@ export default function MicButton({ onText, disabled = false, size = "normal" }:
   }, [disabled]);
 
   function flushInterim() {
-    const rest = interimRef.current.trim();
+    const rest = correctTranscript(interimRef.current).trim();
     clearInterim();
     if (rest) onTextRef.current(rest);
   }
@@ -123,8 +132,9 @@ export default function MicButton({ onText, disabled = false, size = "normal" }:
         else interimText += result[0].transcript;
       }
       interimRef.current = interimText;
-      setInterim(interimText);
-      finalText = finalText.trim();
+      setInterim(correctTranscript(interimText));
+      // 聞き間違いの置き換えは音声の結果にだけ当てる（キーボードで打った文字には当てない）
+      finalText = correctTranscript(finalText).trim();
       if (finalText) {
         restartedRef.current = false; // 聞き取れているので、無音で止まったときのやり直しをまた1回使えるようにする
         setMessage(null);
@@ -178,6 +188,15 @@ export default function MicButton({ onText, disabled = false, size = "normal" }:
     release(true);
   }
 
+  function handleRedo() {
+    if (disabled || listening || !onClear) return;
+    if (!window.confirm(REDO_CONFIRM)) return;
+    onClear();
+    start();
+    // 押したボタンは消えるので、マイクのボタンに移す（キーボード操作で迷わないように）
+    micRef.current?.focus();
+  }
+
   function handleClick() {
     if (disabled) return;
     if (listening) stop();
@@ -190,22 +209,39 @@ export default function MicButton({ onText, disabled = false, size = "normal" }:
 
   return (
     <div className={styles.wrap}>
-      <button
-        type="button"
-        className={`button button--secondary ${size === "small" ? "button--small" : ""} ${styles.mic} ${listening ? styles.listening : ""}`}
-        onClick={handleClick}
-        disabled={disabled}
-        aria-pressed={listening}
-        aria-label={`音声入力：${visibleLabel}`}
-        aria-describedby={noteId}
-      >
-        <span className={styles.dot} aria-hidden="true" />
-        {visibleLabel}
-        {listening && <VolumeMeter />}
-      </button>
+      <div className={styles.buttons}>
+        <button
+          ref={micRef}
+          type="button"
+          className={`button button--secondary ${size === "small" ? "button--small" : ""} ${styles.mic} ${listening ? styles.listening : ""}`}
+          onClick={handleClick}
+          disabled={disabled}
+          aria-pressed={listening}
+          aria-label={`音声入力：${visibleLabel}`}
+          aria-describedby={noteId}
+        >
+          <span className={styles.dot} aria-hidden="true" />
+          {visibleLabel}
+          {listening && <VolumeMeter />}
+        </button>
+        {onClear && hasText && !listening && !disabled && (
+          <button
+            type="button"
+            className={`button button--secondary ${size === "small" ? "button--small" : ""} ${styles.redo}`}
+            onClick={handleRedo}
+            aria-label={`もう一度話す：${REDO_HELP}`}
+            title={REDO_HELP}
+          >
+            もう一度話す
+          </button>
+        )}
+      </div>
       {listening && interim && <p className={styles.interim}>聞き取り中：{interim}</p>}
       <p id={noteId} className={styles.note}>
         音声はブラウザの音声入力で文字にします（Chrome は Google、Edge はマイクロソフトのサーバーで文字にします）
+      </p>
+      <p className={styles.note}>
+        音声はたまに聞き間違えることがあります（例：「先代」が「仙台」になる）。送信する前に内容を確かめ、必要なら直してください。ご了承ください。
       </p>
       <p className={styles.message} role="status" aria-live="polite">
         {message}

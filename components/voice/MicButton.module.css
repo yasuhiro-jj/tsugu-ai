@@ -105,3 +105,19 @@
   color: var(--color-muted);
   overflow-wrap: anywhere;
 }
+
+/* マイクと［もう一度話す］を横に並べる（狭いときは折り返す） */
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.buttons > button {
+  max-width: 100%;
+}
+
+.redo {
+  white-space: normal;
+}

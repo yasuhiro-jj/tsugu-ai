@@ -76,6 +76,13 @@ export default function AskPanel({ courseId, articleNo, articleTitle }: Props) {
     }
   }
 
+  /** ［もう一度話す］：入力欄を空にする（続けて届く音声がすぐ空の欄に足されるよう、ref も先に空にする） */
+  function clearForVoice() {
+    questionRef.current = "";
+    setVoiceNotice(null);
+    setQuestion("");
+  }
+
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!canSend || sending.current) return;
@@ -171,7 +178,13 @@ export default function AskPanel({ courseId, articleNo, articleTitle }: Props) {
             閉じる
           </button>
           {/* 欄を開いているときだけ出る（閉じているときはこの部分自体を描かない） */}
-          <MicButton onText={handleVoiceText} disabled={pending} size="small" />
+          <MicButton
+            onText={handleVoiceText}
+            disabled={pending}
+            size="small"
+            hasText={question.length > 0}
+            onClear={clearForVoice}
+          />
         </div>
       </form>
 

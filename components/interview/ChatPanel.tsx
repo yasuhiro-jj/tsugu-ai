@@ -58,6 +58,13 @@ export default function ChatPanel({
     }
   }
 
+  /** ［もう一度話す］：入力欄を空にする（続けて届く音声がすぐ空の欄に足されるよう、ref も先に空にする） */
+  function clearForVoice() {
+    draftRef.current = "";
+    setVoiceNotice(null);
+    onDraftChange("");
+  }
+
   // 新しい発言が増えたら下までスクロール
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "nearest" });
@@ -143,7 +150,12 @@ export default function ChatPanel({
           <button type="submit" className="button" disabled={!canSend} aria-busy={thinking}>
             {thinking ? "考えています…" : "送信"}
           </button>
-          <MicButton onText={handleVoiceText} disabled={inputDisabled || thinking} />
+          <MicButton
+            onText={handleVoiceText}
+            disabled={inputDisabled || thinking}
+            hasText={draft.length > 0}
+            onClear={clearForVoice}
+          />
         </div>
       </form>
     </section>
