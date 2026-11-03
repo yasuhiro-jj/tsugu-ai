@@ -5,29 +5,11 @@ import type { ChatMessage } from "@/lib/interview-types";
 // サーバーの検証と同じ上限値を使う（lib/validation.ts は server-only ではなく、秘密情報も含まない）
 import { MESSAGE_MAX_CHARS } from "@/lib/validation";
 import MicButton from "@/components/voice/MicButton";
+import { appendWithinLimit, voiceLimitNotice } from "@/components/voice/append";
 
 /** 文字数の数え方はサーバー（lib/validation.ts）に合わせる：前後の空白を除き、絵文字なども1文字 */
 function countChars(text: string): number {
   return Array.from(text.trim()).length;
-}
-
-/**
- * 今の文の後ろに音声の文字を足す。上限を超える分は切る。
- * 入力欄の maxLength（UTF-16 の長さ）とサーバーの数え方（1文字単位）の両方に収まるよう、
- * 厳しい方の UTF-16 の長さで切り、絵文字などを途中で割らないよう1文字ずつ足す。
- */
-function appendWithinLimit(current: string, addition: string): { text: string; truncated: boolean } {
-  const sep = current.length === 0 || /\s$/.test(current) ? "" : " ";
-  const base = current + sep;
-  let text = base;
-  for (const ch of Array.from(addition)) {
-    if (text.length + ch.length > MESSAGE_MAX_CHARS) {
-      // 1文字も入らなかったときは、区切りの空白も足さない
-      return { text: text === base ? current : text, truncated: true };
-    }
-    text += ch;
-  }
-  return { text, truncated: false };
 }
 
 type Props = {
@@ -68,8 +50,8 @@ export default function ChatPanel({
 
   function handleVoiceText(text: string) {
     if (inputDisabled || thinking) return;
-    const { text: next, truncated } = appendWithinLimit(draftRef.current, text);
-    setVoiceNotice(truncated ? `${MESSAGE_MAX_CHARS} 文字の上限に達したため、残りは入れませんでした。` : null);
+    const { text: next, truncated } = appendWithinLimit(draftRef.current, text, { max: MESSAGE_MAX_CHARS });
+    setVoiceNotice(truncated ? voiceLimitNotice(MESSAGE_MAX_CHARS) : null);
     if (next !== draftRef.current) {
       draftRef.current = next;
       onDraftChange(next);

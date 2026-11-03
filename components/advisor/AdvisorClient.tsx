@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import type { AdvisorMessage, AdvisorState } from "@/lib/advisor-types";
+import { ADVISOR_MAX_LENGTH, type AdvisorMessage, type AdvisorState } from "@/lib/advisor-types";
 import { postJson } from "@/components/post-json";
 import { useElapsedSeconds } from "@/components/use-elapsed";
+import MicButton from "@/components/voice/MicButton";
+import { appendWithinLimit, voiceLimitNotice } from "@/components/voice/append";
 import styles from "./advisor.module.css";
 
 /** 文字数の数え方：前後の空白を除き、絵文字なども1文字（面談の入力欄と同じ） */
@@ -54,6 +56,23 @@ export default function AdvisorClient({ initialState, suggestions }: Props) {
   const noTurns = state.remainingTurns <= 0;
   const busy = sending || resetMode === "pending";
   const canSend = !busy && !noTurns && length > 0 && !over;
+  const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
+  // 音声の結果は非同期で届くので、最新の入力内容をここで持つ（続けて届いても上書きしない）
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+    if (draft.length === 0) setVoiceNotice(null); // 送信して空になったら案内も消す
+  }, [draft]);
+
+  function handleVoiceText(text: string) {
+    if (busy || noTurns) return;
+    const { text: next, truncated } = appendWithinLimit(draftRef.current, text, { max: ADVISOR_MAX_LENGTH });
+    setVoiceNotice(truncated ? voiceLimitNotice(ADVISOR_MAX_LENGTH) : null);
+    if (next !== draftRef.current) {
+      draftRef.current = next;
+      setDraft(next);
+    }
+  }
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "nearest" });
@@ -210,10 +229,16 @@ export default function AdvisorClient({ initialState, suggestions }: Props) {
           </span>
           {!noTurns && <span className="chat__hint">Ctrl＋Enter でも送信できます</span>}
         </div>
-        <div className="button-row">
+        {voiceNotice && (
+          <p className="chat__help" role="status">
+            {voiceNotice}
+          </p>
+        )}
+        <div className="button-row" style={{ alignItems: "flex-start" }}>
           <button type="submit" className="button" disabled={!canSend} aria-busy={sending}>
             {sending ? `考えています…（${seconds}秒）` : "送信"}
           </button>
+          <MicButton onText={handleVoiceText} disabled={busy || noTurns} />
         </div>
         {error && (
           <p className="form-error" role="alert">

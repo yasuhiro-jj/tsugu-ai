@@ -14,6 +14,8 @@ type Props = {
   onText: (text: string) => void;
   /** 送信中・AI の返事待ちなど、押せないとき true。聞き取り中に true になったら止める */
   disabled?: boolean;
+  /** 周りのボタンが小さいとき "small"（.button--small をそろえて付ける） */
+  size?: "normal" | "small";
 };
 
 const MIC_DENIED = "マイクが使えませんでした。ブラウザの設定でマイクを許可してください。";
@@ -41,7 +43,7 @@ function errorMessage(code: string): string | null {
  * 音声認識が無いブラウザでは何も表示しない。サーバー描画との食い違いを避けるため、
  * 対応しているかは画面がブラウザで動き始めてから調べる。
  */
-export default function MicButton({ onText, disabled = false }: Props) {
+export default function MicButton({ onText, disabled = false, size = "normal" }: Props) {
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -130,7 +132,7 @@ export default function MicButton({ onText, disabled = false }: Props) {
     <div className={styles.wrap}>
       <button
         type="button"
-        className={`button button--secondary ${styles.mic} ${listening ? styles.listening : ""}`}
+        className={`button button--secondary ${size === "small" ? "button--small" : ""} ${styles.mic} ${listening ? styles.listening : ""}`}
         onClick={handleClick}
         disabled={disabled}
         aria-pressed={listening}

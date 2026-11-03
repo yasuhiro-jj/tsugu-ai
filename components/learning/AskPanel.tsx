@@ -1,10 +1,12 @@
 "use client";
 
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import type { AskAnswer, CourseId } from "@/lib/plan-types";
 import { postJson } from "@/components/post-json";
 import { useElapsedSeconds } from "@/components/use-elapsed";
 import { askExamples } from "./ask-examples";
+import MicButton from "@/components/voice/MicButton";
+import { appendWithinLimit, voiceLimitNotice } from "@/components/voice/append";
 import styles from "./AskPanel.module.css";
 
 // 記事の横（スマホでは下）の「AIに質問する」欄。後継者のみ（使えるかどうかの最終判断はサーバー）。
@@ -55,6 +57,24 @@ export default function AskPanel({ courseId, articleNo, articleTitle }: Props) {
   const over = charLen(question) > MAX_CHARS;
   const canSend = !pending && len > 0 && !over;
   const examples = askExamples(courseId, articleNo);
+  const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
+  // 音声の結果は非同期で届くので、最新の入力内容をここで持つ（続けて届いても上書きしない）
+  const questionRef = useRef(question);
+  useEffect(() => {
+    questionRef.current = question;
+    if (question.length === 0) setVoiceNotice(null);
+  }, [question]);
+
+  function handleVoiceText(text: string) {
+    if (pending) return;
+    // 1行入力なので、改行は半角スペースにする
+    const { text: next, truncated } = appendWithinLimit(questionRef.current, text, { max: MAX_CHARS, singleLine: true });
+    setVoiceNotice(truncated ? voiceLimitNotice(MAX_CHARS) : null);
+    if (next !== questionRef.current) {
+      questionRef.current = next;
+      setQuestion(next);
+    }
+  }
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -131,6 +151,11 @@ export default function AskPanel({ courseId, articleNo, articleTitle }: Props) {
         <p id={countId} className={over ? `${styles.count} ${styles.countOver}` : styles.count}>
           {charLen(question)}／{MAX_CHARS}文字{over && "（上限を超えています）"}
         </p>
+        {voiceNotice && (
+          <p className={styles.count} role="status">
+            {voiceNotice}
+          </p>
+        )}
         <div className={styles.actions}>
           <button type="submit" className="button button--small" disabled={!canSend} aria-busy={pending}>
             {pending ? "送信中…" : "質問する"}
@@ -145,6 +170,8 @@ export default function AskPanel({ courseId, articleNo, articleTitle }: Props) {
           >
             閉じる
           </button>
+          {/* 欄を開いているときだけ出る（閉じているときはこの部分自体を描かない） */}
+          <MicButton onText={handleVoiceText} disabled={pending} size="small" />
         </div>
       </form>
 

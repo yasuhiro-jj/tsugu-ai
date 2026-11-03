@@ -157,3 +157,8 @@
   font-size: 0.8rem;
   color: var(--color-muted);
 }
+
+/* マイクのボタン（注記つき）は行いっぱいに広げる（狭い欄でも文字が詰まらないように） */
+.actions > div {
+  flex: 1 1 100%;
+}
