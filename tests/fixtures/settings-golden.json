@@ -375,6 +375,42 @@
   "draftNotice": "この資料は下書きです。本人が内容を確認・修正してから使ってください。AI が書いた文には誤りが含まれることがあります。",
   "createdAt": "<ISO>",
   "basedOnDiagnosisAt": "<ISO>",
+  "updatedAt": "<ISO>",
+  "editable": {
+   "results_comment": "売上が減り、営業利益は赤字です",
+   "financial_comment": "手元資金が減っています",
+   "strengths": [
+    {
+     "text": "常連が多い",
+     "basis": "診断の共通点"
+    }
+   ],
+   "issues": [
+    {
+     "text": "原価率の上昇",
+     "basis": "原価率 40.0% → 42.0%"
+    }
+   ],
+   "outlook_viewpoints": [
+    "続けられるか"
+   ],
+   "consult": {
+    "bank": [
+     "返済の条件を見直す相談はできますか"
+    ],
+    "tax": [
+     "承継の税金について教えてください"
+    ],
+    "other": []
+   },
+   "bank_doc": {
+    "purpose": "返済の相談",
+    "questions": [
+     "質問1",
+     "質問2"
+    ]
+   }
+  },
   "summary": {
    "title": "決算サマリー（下書き）",
    "basic": {
