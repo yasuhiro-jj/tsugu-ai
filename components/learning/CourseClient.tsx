@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import type { Course, CourseProgressStatus, LearningState } from "@/lib/plan-types";
 import { asObject, postJson } from "@/components/post-json";
 import { LEVEL_LABELS, STATUS_CLASS } from "./labels";
+import AskPanel from "./AskPanel";
+import askStyles from "./AskPanel.module.css";
 
 // 講座ページ：記事3本 → 問題5問 → 採点（サーバー）→ 結果と AI 解説。
 // 画面は正解データを持たない。○×はサーバーの採点結果だけで表示する。
@@ -114,23 +116,25 @@ export default function CourseClient({ course, initialLevel, initialStatus }: Pr
           記事
         </h2>
         {course.articles.map((a) => (
-          <article
-            key={a.no}
-            id={`article-${a.no}`}
-            tabIndex={-1}
-            className={wrongArticles.has(a.no) ? "card article article--review" : "card article"}
-            aria-labelledby={`article-title-${a.no}`}
-          >
-            {wrongArticles.has(a.no) && <p className="article__review">復習しましょう</p>}
-            <h3 id={`article-title-${a.no}`} className="article__title">
-              記事{a.no}　{a.title}
-            </h3>
-            <ul className="article__body">
-              {a.body.map((line, i) => (
-                <li key={i}>{line}</li>
-              ))}
-            </ul>
-          </article>
+          <div key={a.no} className={askStyles.row}>
+            <article
+              id={`article-${a.no}`}
+              tabIndex={-1}
+              className={wrongArticles.has(a.no) ? "card article article--review" : "card article"}
+              aria-labelledby={`article-title-${a.no}`}
+            >
+              {wrongArticles.has(a.no) && <p className="article__review">復習しましょう</p>}
+              <h3 id={`article-title-${a.no}`} className="article__title">
+                記事{a.no}　{a.title}
+              </h3>
+              <ul className="article__body">
+                {a.body.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+            </article>
+            <AskPanel courseId={course.id} articleNo={a.no} articleTitle={a.title} />
+          </div>
         ))}
       </section>
 

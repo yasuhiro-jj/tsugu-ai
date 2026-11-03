@@ -1,0 +1,159 @@
+/* 講座の記事の横（スマホでは下）の「AIに質問する」欄 */
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 16px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+
+.row > article {
+  margin-bottom: 8px;
+}
+
+@media (min-width: 760px) {
+  .row {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+
+  .row > article {
+    margin-bottom: 0;
+  }
+}
+
+.panel {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  box-shadow: var(--shadow);
+  overflow-wrap: anywhere;
+}
+
+.toggle {
+  width: 100%;
+  white-space: normal;
+  text-align: center;
+}
+
+.panelTitle {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.examples {
+  margin: 12px 0;
+}
+
+.examplesTitle {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.exampleList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.exampleButton {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.exampleButton:hover {
+  background: var(--color-ok-soft);
+}
+
+.exampleButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.label {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.count {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  text-align: right;
+}
+
+.countOver {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.actions > button {
+  flex: 1 1 auto;
+  white-space: normal;
+}
+
+.waiting {
+  margin: 8px 0 0;
+  color: var(--color-muted);
+}
+
+.answerText {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.termsTitle {
+  margin: 12px 0 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.terms {
+  margin: 0;
+}
+
+.terms dt {
+  font-weight: 600;
+}
+
+.terms dd {
+  margin: 0 0 6px;
+}
+
+.note {
+  margin: 10px 0 0;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}

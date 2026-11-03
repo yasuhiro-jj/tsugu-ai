@@ -2,7 +2,7 @@
 // 比率・得点などの計算はすべてここでルールベースで行い、AI には計算済みの文字列だけを渡す。
 // 秘密情報・実在の財務データは含まない（画面・サーバーどちらから import してもよい）。
 
-import type { FinancialSummary } from "./plan-types";
+import type { FinancialSummary, UpsideItem, UpsideSummary } from "./plan-types";
 
 export const FINANCIAL_SOURCE = "決算書（架空）2025年3月期・2026年3月期";
 
@@ -140,6 +140,102 @@ export function getFinancialSummary(): FinancialSummary {
       ),
     ],
   };
+}
+
+// ---- 踏ん張れば伸びる余地（仮定の試算。Notion「デモ会社設定」3章。単位：万円） ----
+// 前提だけをデータとして持ち、効果は当期の数字（CURRENT_PERIOD）から計算する（直書きしない）。
+
+export const UPSIDE_ASSUMPTIONS = {
+  /** 月末棚卸＋仕入れ・メニューの見直し：原価率の目標（%） */
+  targetCostRate: 40,
+  /** ランチ価格の改定：1食あたりの値上げ（円） */
+  lunchPriceUpYen: 40,
+  /** ランチの年間食数（食） */
+  lunchMealsPerYear: 25_000,
+  /** 宴会・法事：年間の増加組数 */
+  banquetExtraGroups: 8,
+  /** 宴会・法事：1組あたりの売上（万円） */
+  banquetPricePerGroup: 15,
+  /** 宴会・法事：原価率（%） */
+  banquetCostRate: 20,
+  /** シフト見直し：人件費率の目標（%） */
+  targetLaborRate: 36,
+} as const;
+
+export const UPSIDE_NOTE =
+  "試算は仮定にもとづくもので、実現を保証しない。AIは『この策が正解』と断定せず、選択肢と前提条件を示す。";
+
+/** 増減の表記（＋／▲つきの万円。0 は「0万円」） */
+export function formatManSigned(v: number): string {
+  return v > 0 ? `+${formatMan(v)}` : formatMan(v);
+}
+
+export function getUpsideSummary(): UpsideSummary {
+  const a = UPSIDE_ASSUMPTIONS;
+  const c = CURRENT_PERIOD;
+  const cc = computePeriod(c);
+  // 割り算の誤差を避けるため「金額 − 売上×目標率」で計算する（売上×(現在率−目標率) と同じ）
+  const costEffect = c.cogs - (c.sales * a.targetCostRate) / 100;
+  const lunchEffect = (a.lunchPriceUpYen * a.lunchMealsPerYear) / 10_000; // 円 → 万円
+  const banquetEffect = (a.banquetExtraGroups * a.banquetPricePerGroup * (100 - a.banquetCostRate)) / 100;
+  const laborEffect = c.labor - (c.sales * a.targetLaborRate) / 100;
+
+  const item = (id: UpsideItem["id"], title: string, assumption: string, raw: number): UpsideItem => {
+    const effect = round1(raw);
+    return { id, title, assumption, effect, effectText: formatManSigned(effect) };
+  };
+  const items: UpsideItem[] = [
+    item(
+      "costrate",
+      "月末棚卸＋仕入れ・メニューの見直し",
+      `原価率 ${formatPercent(cc.costRate)} → ${formatPercent(a.targetCostRate)}`,
+      costEffect,
+    ),
+    item(
+      "lunchprice",
+      "据え置いていたランチ価格の改定",
+      `1食+${a.lunchPriceUpYen}円、年約${a.lunchMealsPerYear.toLocaleString("ja-JP")}食`,
+      lunchEffect,
+    ),
+    item(
+      "banquet",
+      "宴会・法事の受注を「先代の人脈」から「仕組み」へ",
+      `年+${a.banquetExtraGroups}組×${a.banquetPricePerGroup}万円、原価率${a.banquetCostRate}%`,
+      banquetEffect,
+    ),
+    item(
+      "shift",
+      "曜日・時間帯別のシフト見直し",
+      `人件費率 ${formatPercent(cc.laborRate)} → ${formatPercent(a.targetLaborRate)}`,
+      laborEffect,
+    ),
+  ];
+  const total = round1(items.reduce((n, i) => n + i.effect, 0));
+  const before = round1(cc.operatingProfit);
+  const after = round1(before + total);
+  return {
+    items,
+    total,
+    totalText: formatManSigned(total),
+    operatingProfitBefore: before,
+    operatingProfitBeforeText: formatMan(before),
+    operatingProfitAfter: after,
+    operatingProfitAfterText: formatManSigned(after),
+    note: UPSIDE_NOTE,
+  };
+}
+
+/** AI に渡す試算の文字列（計算済み。仮定であることを明記） */
+export function upsideForPrompt(): string {
+  const u = getUpsideSummary();
+  const lines = [
+    "踏ん張れば伸びる余地（仮定の試算。単位：万円。当期＝2026年3月期の数字から計算）",
+    "※実現を保証しない。断定せず、前提条件と選択肢として扱うこと。",
+  ];
+  for (const i of u.items) lines.push(`- ${i.title}：前提 ${i.assumption}／営業利益への効果 ${i.effectText}`);
+  lines.push(`- 合計：${u.totalText}（営業利益 当期 ${u.operatingProfitBeforeText} → 改善後 約${u.operatingProfitAfterText}）`);
+  lines.push(`注記：${u.note}`);
+  return lines.join("\n");
 }
 
 /** AI に渡す文字列（計算済み。資料名と対象期間つき）。 */

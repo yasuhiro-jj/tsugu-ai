@@ -57,6 +57,28 @@ export type FinancialSummary = {
   rows: { label: string; previous: string; current: string; note?: string }[];
 };
 
+// ---- 踏ん張れば伸びる余地（仮定の試算。単位：万円。lib/financials.ts の getUpsideSummary() で計算） ----
+export type UpsideItemId = "costrate" | "lunchprice" | "banquet" | "shift";
+
+export type UpsideItem = {
+  id: UpsideItemId;
+  title: string; // 改善策（例：「月末棚卸＋仕入れ・メニューの見直し」）
+  assumption: string; // 前提（例：「原価率 42.0% → 40.0%」）
+  effect: number; // 営業利益への効果（万円。小数1桁に丸め済み）
+  effectText: string; // 表示用（例：「+108万円」）
+};
+
+export type UpsideSummary = {
+  items: UpsideItem[];
+  total: number; // 効果の合計（万円）
+  totalText: string; // 例：「+358万円」
+  operatingProfitBefore: number; // 当期の営業利益（万円）
+  operatingProfitBeforeText: string; // 例：「▲236万円」
+  operatingProfitAfter: number; // 改善後の営業利益 = 当期の営業利益 ＋ 合計（万円）
+  operatingProfitAfterText: string; // 例：「+122万円」
+  note: string; // 注記（実現を保証しない、など）
+};
+
 // ---- 講座（内容は Notion「学習講座コンテンツ v1」で固定。AI は作らない） ----
 export type CourseId = "cashflow" | "costrate" | "trialbalance";
 
@@ -75,7 +97,16 @@ export type Course = {
   }[]; // 正解は画面へ送らない（採点はサーバー）
 };
 
-export type CourseProgressStatus = "未着手" | "学習中" | "完了" | "復習をおすすめ";
+/**
+ * 記事の横の「AIに質問する」の答え（POST /api/learning/ask  body: { courseId, articleNo, question } → { ok, answer: AskAnswer }  後継者のみ）。
+ * 会話は保存しない（1問1答）。terms は答えの中で使った言葉の短い説明（0〜3件）
+ */
+export type AskAnswer = {
+  text: string;
+  terms: { term: string; meaning: string }[];
+};
+
+export type CourseProgressStatus ="未着手" | "学習中" | "完了" | "復習をおすすめ";
 
 export type CourseProgress = {
   courseId: CourseId;
@@ -130,4 +161,4 @@ export type ActionPlanState = {
 // POST /api/plan/action                     body: { id, title?, status?: ActionStatus, owner?, due? } → { ok, state: ActionPlanState }  due はその行動の期間内だけ
 // DELETE /api/plan/action                   body: { id }                   → { ok, state: ActionPlanState }  最後の1件は消せない
 // サーバーコンポーネント用（画面は lib から直接呼ぶ）：
-//   getDiagnosis(demoId) / getFinancialSummary() / getCourses() / getCourse(id) / getLearningState(demoId) / getActionPlan(demoId)
+//   getDiagnosis(demoId) / getFinancialSummary() / getUpsideSummary() / getCourses() / getCourse(id) / getLearningState(demoId) / getActionPlan(demoId)

@@ -3,9 +3,11 @@ import { getRole } from "@/lib/role";
 import { getDemoId } from "@/lib/demo";
 import { getComparison } from "@/lib/compare";
 import type { ComparisonRow } from "@/lib/interview-types";
-import type { DiagnosisRecord, FinancialSummary } from "@/lib/plan-types";
+import type { DiagnosisRecord, FinancialSummary, UpsideSummary } from "@/lib/plan-types";
 import SummarySections, { SHARED_SUMMARY_LABELS } from "@/components/SummarySections";
 import DiagnosisSection from "@/components/diagnosis/DiagnosisSection";
+import UpsideSection from "@/components/upside/UpsideSection";
+import { getUpsideSummary } from "@/lib/financials";
 import { getDiagnosis, getFinancialSummary } from "@/components/server-data";
 
 export const dynamic = "force-dynamic";
@@ -49,11 +51,20 @@ export default async function ComparePage() {
   // 認識差の診断（サーバーが共有済みの回答だけで作ったもの）とお店の数字（計算済み）
   let diagnosis: DiagnosisRecord | null = null;
   let financial: FinancialSummary | null = null;
+  // 踏ん張れば伸びる余地（仮定の試算。ルールベースで計算済み）。お店の数字と一緒に出す
+  let upside: UpsideSummary | null = null;
   if (rows !== null && visible.length > 0) {
     try {
       financial = await getFinancialSummary();
     } catch {
       financial = null;
+    }
+    if (financial) {
+      try {
+        upside = getUpsideSummary();
+      } catch {
+        upside = null;
+      }
     }
     if (demoId) {
       try {
@@ -108,6 +119,9 @@ export default async function ComparePage() {
 
           {/* デモの見せ場。共有済み要約より上に置く */}
           <DiagnosisSection initialRecord={diagnosis} financial={financial} role={role} />
+
+          {/* お店の数字（診断の欄の最後）のすぐ後に置く */}
+          {upside && <UpsideSection upside={upside} />}
 
           <section className="card compare-shared" aria-labelledby="shared-title">
             <h2 id="shared-title">共有された内容（テーマ別）</h2>

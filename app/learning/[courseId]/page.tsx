@@ -20,7 +20,12 @@ export default async function CoursePage({ params }: { params: Promise<{ courseI
         <h1 className="page-title">講座</h1>
         <section className="card" role="status">
           {role === "predecessor" ? (
-            <p>講座は後継者ご本人のページです。</p>
+            <>
+              <p>講座は後継者ご本人のページです。</p>
+              <p className="muted">
+                <small>記事についての質問は、後継者として入ると使えます。</small>
+              </p>
+            </>
           ) : (
             <>
               <p>講座は、後継者として入ってから見られます。</p>
