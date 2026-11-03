@@ -294,7 +294,11 @@ const ASSERTIVE = /通ります|必ず|間違いなく|確実に|保証します
 async function check(name, fn) {
   const t0 = Date.now();
   try {
-    const r = await fn();
+    // 1つの確認は3分まで。止まっても次の確認と結果の表示へ進む
+    const r = await Promise.race([
+      fn(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("3分たっても終わらないため打ち切り")), 180_000)),
+    ]);
     const ok = r?.ok !== false;
     extra.push({ name, ok, detail: r?.detail ?? "" });
     console.log(`    ${ok ? "OK " : "NG "} ${name}${r?.detail ? `：${r.detail}` : ""}（${Math.round((Date.now() - t0) / 1000)}秒）`);
@@ -433,10 +437,12 @@ async function extraSteps() {
     await switchRole("predecessor");
     const bodies = [];
     const pend = [];
-    const onRes = (res) => pend.push(res.text().then((b) => bodies.push({ url: res.url(), b })).catch(() => {}));
+    // 応答の本文は5秒までしか待たない（流し続ける応答で止まり、2時間以上進まなかったことがあるため）
+    const within = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(r, ms))]);
+    const onRes = (res) => pend.push(within(res.text().then((b) => bodies.push({ url: res.url(), b })).catch(() => {}), 5_000));
     page.on("response", onRes);
-    await page.goto(BASE + "/advisor", { waitUntil: "networkidle" });
-    await Promise.all(pend);
+    await page.goto(BASE + "/advisor", { waitUntil: "networkidle", timeout: 60_000 });
+    await within(Promise.all(pend), 15_000);
     page.off("response", onRes);
     const rsc = await ctx.request.get(BASE + "/advisor", { headers: { RSC: "1" } });
     bodies.push({ url: "/advisor (RSC)", b: await rsc.text() });
