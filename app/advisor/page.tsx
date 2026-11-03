@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { getRole } from "@/lib/role";
-import { getDemoId } from "@/lib/demo";
+import { getSession } from "@/lib/demo";
 import { getAdvisorState } from "@/lib/advisor";
 import {
   ADVISOR_MAX_LENGTH,
@@ -22,7 +21,9 @@ const EMPTY_STATE: AdvisorState = {
 };
 
 export default async function AdvisorPage() {
-  const role = await getRole();
+  // デモ用 ID と役割は getSession() でそろえて読む（どちらか無ければ「役割を選ぶ」の案内。SEC-A04）
+  const session = await getSession();
+  const role = session?.role ?? null;
 
   if (!role) {
     return (
@@ -41,7 +42,7 @@ export default async function AdvisorPage() {
     );
   }
 
-  const demoId = await getDemoId();
+  const demoId = session?.demoId ?? null;
   let state: AdvisorState | null = EMPTY_STATE;
   if (demoId) {
     try {

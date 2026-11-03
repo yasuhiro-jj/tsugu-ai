@@ -146,6 +146,11 @@ export type ReportState = {
   isDraft: true;
   /** 「下書きです。本人が確認・修正してから使ってください」などの固定文 */
   draftNotice: string;
+  /**
+   * AI の文に言い切りに見える表現があったときの固定の注記（lib/assertive.ts）。AI の文そのものは変えない。
+   * 今の画面でも見えるように、同じ文を draftNotice の後ろにもつないでいる
+   */
+  caution?: string;
   createdAt: string; // ISO（UTC）
   /** 作成時に使った診断の createdAt（ISO） */
   basedOnDiagnosisAt: string;

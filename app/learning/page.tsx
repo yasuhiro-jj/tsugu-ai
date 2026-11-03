@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { getRole } from "@/lib/role";
-import { getDemoId } from "@/lib/demo";
+import { getSession } from "@/lib/demo";
 import type { Course, LearningState } from "@/lib/plan-types";
 import LearningClient from "@/components/learning/LearningClient";
 import { getCourses, getDiagnosis, getLearningState, WANTS_MAX_CHARS } from "@/components/server-data";
@@ -10,7 +9,9 @@ export const dynamic = "force-dynamic";
 // 学習プランは後継者本人のページ。先代には後継者の内容（レベル・プラン・進み具合）を一切渡さない。
 
 export default async function LearningPage() {
-  const role = await getRole();
+  // デモ用 ID と役割は getSession() でそろえて読む（どちらか無ければ「役割を選ぶ」の案内。SEC-A04）
+  const session = await getSession();
+  const role = session?.role ?? null;
 
   if (!role) {
     return (
@@ -43,7 +44,7 @@ export default async function LearningPage() {
     );
   }
 
-  const demoId = await getDemoId();
+  const demoId = session?.demoId ?? null;
   let state: LearningState | null = null;
   let courses: Pick<Course, "id" | "title" | "level" | "goal">[] = [];
   // 診断があるかどうかだけを画面へ渡す（診断の中身は渡さない）。読めなければ案内を出さない

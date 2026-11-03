@@ -37,6 +37,7 @@ import { getDiagnosisFrom, toPublicDiagnosisRecord } from "./diagnosis";
 import { byDue, getActionPlanFrom, PHASE_LABEL } from "./action-plan";
 import { REPORT_SYSTEM } from "./prompts/report";
 import { arr, callJsonAi, dataBlock, DATA_NOTE, obj, str, type AiDeps, type JsonAiRequest } from "./ai/json-ai";
+import { ASSERTIVE_CAUTION, cautionFor, findAssertiveClaims } from "./assertive";
 import { jstDateTime, jstToday, nowIso } from "./util";
 import type { Role } from "./role";
 
@@ -234,6 +235,26 @@ const BANK_LABELS = [
   "当期の現金の動き",
 ];
 
+/** 資料の AI の文をすべて並べる（言い切りの確認用） */
+export function reportAiTexts(ai: ReportAiParts): string[] {
+  return [
+    ai.results_comment,
+    ai.financial_comment,
+    ...ai.strengths.flatMap((p) => [p.text, p.basis]),
+    ...ai.issues.flatMap((p) => [p.text, p.basis]),
+    ...ai.outlook_viewpoints,
+    ...ai.consult.bank,
+    ...ai.consult.tax,
+    ...ai.consult.other,
+    ai.bank_doc.purpose,
+    ...ai.bank_doc.questions,
+  ];
+}
+
+function reportHasAssertive(ai: ReportAiParts): boolean {
+  return reportAiTexts(ai).some((t) => findAssertiveClaims(t).length > 0);
+}
+
 /** 保存済みの AI の文と、今の数字・90日計画から、画面にそのまま出せる形を組み立てる */
 export function buildReportState(
   ai: ReportAiParts,
@@ -253,9 +274,13 @@ export function buildReportState(
   const indicator = (labels: string[]) => pickRows(labels, ch);
   const pendingNote = "要確認：この版では外部の統計データは扱っていません。自店の数字で見るべき指標だけを示します。";
 
+  // 言い切りに見える表現の確認（SEC-302）。表示のたびに保存済みの AI の文から決める（ログは作成時だけ）
+  const caution = reportHasAssertive(ai) ? ASSERTIVE_CAUTION : undefined;
+
   return {
     isDraft: true,
-    draftNotice: DRAFT_NOTICE,
+    draftNotice: caution ? `${DRAFT_NOTICE}${caution}。` : DRAFT_NOTICE,
+    ...(caution ? { caution } : {}),
     createdAt: meta.createdAt,
     basedOnDiagnosisAt: meta.diagnosisCreatedAt,
     summary: {
@@ -454,6 +479,8 @@ export async function createReport(deps: AiDeps, demoId: string, role: Role): Pr
   const plan = await getActionPlanFrom(deps.db, demoId);
   const req = buildReportRequest(toPublicDiagnosisRecord(diag).diagnosis, plan.actions);
   const ai = await callJsonAi(deps, demoId, role, req, parseReportAi);
+  // 言い切りに見える表現があれば、種類だけをログに出す（本文は出さない。注記は buildReportState で付く。SEC-302）
+  cautionFor("report.create", reportAiTexts(ai));
 
   const now = nowIso();
   // 今の診断がまだ同じときだけ書く（AI を待つ間に取り消し・作り直しがあれば書かない）

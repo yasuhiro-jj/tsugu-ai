@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getRole } from "@/lib/role";
-import { getDemoId } from "@/lib/demo";
+import { getSession } from "@/lib/demo";
 import type { Course, LearningState } from "@/lib/plan-types";
 import CourseClient from "@/components/learning/CourseClient";
 import { displayCourseTitle } from "@/components/learning/labels";
@@ -13,7 +12,9 @@ export default async function CoursePage({ params }: { params: Promise<{ courseI
   const { courseId } = await params;
   if (!isCourseId(courseId)) notFound();
 
-  const role = await getRole();
+  // デモ用 ID と役割は getSession() でそろえて読む（どちらか無ければ「役割を選ぶ」の案内。SEC-A04）
+  const session = await getSession();
+  const role = session?.role ?? null;
   if (role !== "successor") {
     return (
       <>
@@ -60,7 +61,7 @@ export default async function CoursePage({ params }: { params: Promise<{ courseI
     })),
   };
 
-  const demoId = await getDemoId();
+  const demoId = session?.demoId ?? null;
   let state: LearningState | null = null;
   if (demoId) {
     try {

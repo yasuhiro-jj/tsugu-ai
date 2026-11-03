@@ -17,6 +17,19 @@ const SUMMARY_FIELDS = ["statements", "ai_observations", "unconfirmed"] as const
  */
 export const BAD_TEXT_CHARS = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
 
+/**
+ * \u5e45\u306e\u306a\u3044\u63a5\u5408\u5b50 ZWJ\uff08U+200D\uff09\u3002\u5bb6\u65cf\u306e\u7d75\u6587\u5b57\u306a\u3069\u306e\u5408\u6210\u306b\u4f7f\u3046\u306e\u3067\u3001BAD_TEXT_CHARS \u306e\u4f8b\u5916\u3068\u3057\u3066\u8a31\u3059\uff08SEC-A03\uff09\u3002
+ * \u305f\u3060\u3057\u6587\u306e\u5148\u982d\u30fb\u672b\u5c3e\u306b\u3042\u308b\u3068\u304d\u30012\u3064\u4ee5\u4e0a\u7d9a\u304f\u3068\u304d\u306f 400\uff08ZWJ_MISUSE\uff09\u3002
+ */
+export const ZWJ = /\u200d/gu;
+export const ZWJ_MISUSE = /^\u200d|\u200d$|\u200d\u200d/u;
+
+/** \u4f7f\u3048\u306a\u3044\u6587\u5b57\u304c\u3042\u308b\u304b\uff08ZWJ \u306f ZWJ_MISUSE \u306e\u5f62\u306e\u3068\u304d\u3060\u3051\u4f7f\u3048\u306a\u3044\uff09 */
+export function hasBadTextChars(value: string): boolean {
+  if (ZWJ_MISUSE.test(value)) return true;
+  return BAD_TEXT_CHARS.test(value.replace(ZWJ, ""));
+}
+
 export type TextRule = {
   /** 文字数の上限（サロゲートペアは1文字） */
   max: number;
@@ -38,7 +51,8 @@ export function validateText(value: unknown, rule: TextRule): string {
   const text = normalized.trim();
   if (charLength(text) === 0) throw new ServiceError(400, rule.emptyMessage);
   // 使えない文字は前後の空白を除く前の文で確かめる（末尾の改行・タブも、改行を許さない欄では 400）
-  if (BAD_TEXT_CHARS.test(rule.allowNewline ? normalized.replace(/\n/g, "") : normalized)) {
+  // ZWJ の先頭・末尾は前後の空白を除いた文でも確かめる（「 ZWJ」のような入力も弾く）
+  if (hasBadTextChars(rule.allowNewline ? normalized.replace(/\n/g, "") : normalized) || ZWJ_MISUSE.test(text)) {
     throw new ServiceError(400, rule.badCharMessage);
   }
   if (charLength(text) > rule.max) throw new ServiceError(400, rule.tooLongMessage);

@@ -167,6 +167,11 @@ export default function AskPanel({ courseId, articleNo, articleTitle }: Props) {
                 </dl>
               </>
             )}
+            {answer.answer.caution && (
+              <p className={styles.note} role="note">
+                <strong>{answer.answer.caution}</strong>
+              </p>
+            )}
             <p className={styles.note}>AIによる説明です。記事にない数字は答えません。税金・融資・法律の判断は専門家に確認してください</p>
           </div>
         )}

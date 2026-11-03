@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { getRole } from "@/lib/role";
-import { getDemoId } from "@/lib/demo";
+import { getSession } from "@/lib/demo";
 import { getReport } from "@/lib/report";
 import type { ReportState } from "@/lib/report-types";
 import type { DiagnosisRecord } from "@/lib/plan-types";
@@ -15,7 +14,9 @@ export const dynamic = "force-dynamic";
 // 診断の中身はこの画面では使わない（有無だけを見る）ので、ブラウザへは送らない。
 
 export default async function ReportPage() {
-  const role = await getRole();
+  // デモ用 ID と役割は getSession() でそろえて読む（どちらか無ければ「役割を選ぶ」の案内。SEC-A04）
+  const session = await getSession();
+  const role = session?.role ?? null;
 
   if (!role) {
     return (
@@ -34,7 +35,7 @@ export default async function ReportPage() {
     );
   }
 
-  const demoId = await getDemoId();
+  const demoId = session?.demoId ?? null;
   let diagnosis: DiagnosisRecord | null = null;
   let report: ReportState | null = null;
   let loadError = false;

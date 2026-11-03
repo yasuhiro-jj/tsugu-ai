@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { getRole } from "@/lib/role";
-import { getDemoId } from "@/lib/demo";
+import { getSession } from "@/lib/demo";
 import { getComparison } from "@/lib/compare";
 import type { ComparisonRow } from "@/lib/interview-types";
 import type { DiagnosisRecord, FinancialSummary, UpsideSummary } from "@/lib/plan-types";
@@ -16,8 +15,10 @@ export const dynamic = "force-dynamic";
 // null の側は何も描画しない（「非公開」「未回答」などの文言も出さない＝存在を伝えない）。
 
 export default async function ComparePage() {
-  const role = await getRole();
-  const demoId = await getDemoId();
+  // デモ用 ID と役割は getSession() でそろえて読む（どちらか無ければ「役割を選ぶ」の案内。SEC-A04）
+  const session = await getSession();
+  const role = session?.role ?? null;
+  const demoId = session?.demoId ?? null;
 
   if (!role) {
     return (

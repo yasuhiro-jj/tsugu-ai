@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { getRole } from "@/lib/role";
-import { getDemoId } from "@/lib/demo";
+import { getSession } from "@/lib/demo";
 import type { ActionPlanState } from "@/lib/plan-types";
 import PlanClient from "@/components/plan/PlanClient";
 import { todayInJapan } from "@/components/format";
@@ -11,7 +10,9 @@ export const dynamic = "force-dynamic";
 const EMPTY_PLAN: ActionPlanState = { startDate: null, actions: [], message: null, createdAt: null };
 
 export default async function PlanPage() {
-  const role = await getRole();
+  // デモ用 ID と役割は getSession() でそろえて読む（どちらか無ければ「役割を選ぶ」の案内。SEC-A04）
+  const session = await getSession();
+  const role = session?.role ?? null;
 
   if (!role) {
     return (
@@ -30,7 +31,7 @@ export default async function PlanPage() {
     );
   }
 
-  const demoId = await getDemoId();
+  const demoId = session?.demoId ?? null;
   let state: ActionPlanState | null = EMPTY_PLAN;
   let courseTitles: Record<string, string> = {};
   if (demoId) {

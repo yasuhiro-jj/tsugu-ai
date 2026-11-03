@@ -19,6 +19,7 @@ import { ASK_LEVEL_GUIDE_LV1, ASK_LEVEL_GUIDE_LV2, ASK_SYSTEM_TEMPLATE } from ".
 import { fillPlanTemplate, tagRef } from "./prompts/plan";
 import { arr, callJsonAi, charLen, dataBlock, DATA_NOTE, obj, str, type AiDeps } from "./ai/json-ai";
 import type { Role } from "./role";
+import { cautionFor } from "./assertive";
 
 export const ASK_QUESTION_MAX_CHARS = 200;
 export const ASK_MAX_TOKENS = 800;
@@ -130,7 +131,7 @@ export async function askAboutArticle(
     dataBlock("question", question),
   ].join("\n\n");
 
-  return callJsonAi(
+  const answer = await callJsonAi(
     deps,
     demoId,
     role,
@@ -144,4 +145,7 @@ export async function askAboutArticle(
     },
     parseAskAnswer,
   );
+  // 言い切りに見える表現があれば固定の注記を足す（答えは変えない。ログは種類だけ。SEC-A02）
+  const caution = cautionFor("learning.ask", [answer.text, ...answer.terms.map((t) => t.meaning)]);
+  return caution ? { ...answer, caution } : answer;
 }

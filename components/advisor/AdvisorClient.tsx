@@ -307,6 +307,12 @@ function MessageBubble({ message: m }: { message: AdvisorMessage }) {
               {m.consultNote && <span className={styles.consultNote}>{m.consultNote}</span>}
             </p>
           )}
+          {/* 言い切りに見える表現があったときの注記（文はサーバーの固定文。返事そのものは変えていない） */}
+          {m.caution && (
+            <p className={styles.caution} role="note">
+              {m.caution}
+            </p>
+          )}
           <p className={styles.draftNote}>AI による下書きです。判断するのはあなたです。</p>
         </div>
       </div>

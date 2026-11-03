@@ -6,7 +6,16 @@ export type AdvisorConsult = "不要" | "銀行" | "税理士" | "その他の�
 
 export type AdvisorMessage =
   | { from: "me"; text: string; at: string }
-  | { from: "ai"; text: string; points: string[]; consult: AdvisorConsult; consultNote: string; at: string };
+  | {
+      from: "ai";
+      text: string;
+      points: string[];
+      consult: AdvisorConsult;
+      consultNote: string;
+      at: string;
+      /** AI の返事に言い切りに見える表現があったときの固定の注記（lib/assertive.ts）。返事そのものは変えない */
+      caution?: string;
+    };
 
 export type AdvisorState = {
   messages: AdvisorMessage[];

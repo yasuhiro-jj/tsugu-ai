@@ -19,6 +19,7 @@ import "server-only";
 //   合わなければ消す。診断を一度も使っていない会話（null）は残す（取り消した内容を含まないため）
 // - 知識レベル：後継者は learning.level（講座で上がる）、先代は初期値（REV-005）
 // - 入力本文・AI の返事はログに出さない
+// - AI の返事に言い切りに見える表現があれば固定の注記（caution）を足す。返事は変えない（lib/assertive.ts。SEC-A02）
 
 import type { Client } from "@libsql/client";
 import {
@@ -40,6 +41,7 @@ import { arr, callJsonAi, dataBlock, dataNote, str, type AiDeps, type JsonAiMess
 import { charLen, fillTemplate, nowIso } from "./util";
 import { validateText } from "./validation";
 import { getLearningLevel } from "./learning";
+import { ASSERTIVE_CAUTION, cautionFor } from "./assertive";
 
 export const MSG_ADVISOR_TURN_LIMIT = `AI参謀と話せるのは${ADVISOR_MAX_TURNS}回までです。「会話を消す」で始めからやり直せます`;
 export const MSG_ADVISOR_EMPTY = "相談したいことを入力してください";
@@ -106,6 +108,8 @@ function parseStoredMessages(raw: unknown): AdvisorMessage[] {
         consult: m.consult,
         consultNote: typeof m.consultNote === "string" ? m.consultNote : "",
         at: m.at,
+        // 注記は固定の文だけを戻す（保存した JSON のほかの文は画面へ出さない）
+        ...(m.caution === ASSERTIVE_CAUTION ? { caution: ASSERTIVE_CAUTION } : {}),
       });
     }
   }
@@ -386,10 +390,20 @@ export async function sendAdvisorMessage(
     throw err;
   }
 
+  // 言い切りに見える表現があれば固定の注記を足す（返事は変えない。ログは種類だけ。SEC-A02）
+  const caution = cautionFor("advisor.message", [out.reply, ...out.points, out.consultNote]);
   const messages: AdvisorMessage[] = [
     ...chat.messages,
     { from: "me", text, at: myAt },
-    { from: "ai", text: out.reply, points: out.points, consult: out.consult, consultNote: out.consultNote, at: nowIso() },
+    {
+      from: "ai",
+      text: out.reply,
+      points: out.points,
+      consult: out.consult,
+      consultNote: out.consultNote,
+      at: nowIso(),
+      ...(caution ? { caution } : {}),
+    },
   ];
   if (!(await saveChat(deps.db, demoId, role, messages, reservedRev, diagnosis?.created_at ?? null))) {
     await release();

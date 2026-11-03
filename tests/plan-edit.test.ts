@@ -121,7 +121,10 @@ describe("行動の文の書き換え", () => {
       "向き" + String.fromCharCode(0x202e) + "あり",
       "行区切り" + String.fromCharCode(0x2028) + "あり",
       "DEL" + String.fromCharCode(0x7f) + "あり",
-      ...[0x2029, 0x2066, 0x2069, 0x061c, 0x200b, 0x200d, 0xfeff].map((c) => "見えない" + String.fromCharCode(c) + "文字"),
+      ...[0x2029, 0x2066, 0x2069, 0x061c, 0x200b, 0xfeff].map((c) => "見えない" + String.fromCharCode(c) + "文字"),
+      // ZWJ（U+200D）は絵文字の合成のため途中なら可。先頭・末尾・連続は 400（SEC-A03。tests/zwj.test.ts）
+      String.fromCharCode(0x200d) + "先頭",
+      "連続" + String.fromCharCode(0x200d, 0x200d) + "あり",
     ];
     for (const title of bad) {
       await expect(updateAction(db, DEMO_A, { id, title })).rejects.toMatchObject({ status: 400 });

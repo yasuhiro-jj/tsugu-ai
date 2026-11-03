@@ -104,6 +104,8 @@ export type Course = {
 export type AskAnswer = {
   text: string;
   terms: { term: string; meaning: string }[];
+  /** 答えに言い切りに見える表現があったときの固定の注記（lib/assertive.ts）。答えそのものは変えない */
+  caution?: string;
 };
 
 export type CourseProgressStatus ="未着手" | "学習中" | "完了" | "復習をおすすめ";

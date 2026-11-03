@@ -360,10 +360,27 @@ async function extraSteps() {
     await page.locator("#report-ch8").evaluate((el) => el.scrollIntoView());
     await page.locator("section:has(> #report-ch8)").screenshot({ path: path.join(OUT, `${String(++shotNo).padStart(2, "0")}-report-ch8.png`) });
     await shot("report-full");
+    // 印刷の見え方：印刷用の表示に切り替えて、メニュー・ボタンが消えるか確かめ、PDF と画面写真を残す
+    await page.emulateMedia({ media: "print" });
+    const printCheck = await page.evaluate(() => {
+      const shown = (el) => !!el && getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden" && el.getClientRects().length > 0;
+      const nav = document.querySelector("header, nav");
+      const buttons = [...document.querySelectorAll("button")].filter(shown).map((b) => b.textContent.trim());
+      return {
+        navShown: shown(nav),
+        buttons,
+        bankShown: shown(document.querySelector("section[aria-labelledby=report-bank-title]")),
+        ch8Shown: shown(document.getElementById("report-ch8")),
+      };
+    });
+    await page.screenshot({ path: path.join(OUT, `${String(++shotNo).padStart(2, "0")}-report-print-media.png`), fullPage: true });
+    await page.pdf({ path: path.join(OUT, "report-print.pdf"), format: "A4", printBackground: true });
+    await page.emulateMedia({ media: "screen" });
+    quotes.print = printCheck;
     const headsOk = r.heads.every(Boolean);
     return {
       ok: headsOk && r.bank.length > 0 && r.draft,
-      detail: `8章の見出し: ${headsOk ? "そろっている" : `欠け（${r.heads.map((h, i) => (h ? "" : `第${i + 1}章`)).filter(Boolean).join("・")}）`}／第8章の銀行の箇条書き: ${r.bank.length}件／「下書き」表示: ${r.draft ? "あり" : "なし"}／断定表現の候補: ${quotes.reportAssertive || "なし"}`,
+      detail: `8章の見出し: ${headsOk ? "そろっている" : `欠け（${r.heads.map((h, i) => (h ? "" : `第${i + 1}章`)).filter(Boolean).join("・")}）`}／第8章の銀行の箇条書き: ${r.bank.length}件／「下書き」表示: ${r.draft ? "あり" : "なし"}／断定表現の候補: ${quotes.reportAssertive || "なし"}／印刷：メニュー ${quotes.print?.navShown ? "出る（NG）" : "消える"}・ボタン ${quotes.print?.buttons?.length ? `出る（${quotes.print.buttons.join("、")}）` : "消える"}・第8章 ${quotes.print?.ch8Shown ? "出る" : "出ない"}・銀行資料 ${quotes.print?.bankShown ? "出る" : "出ない"}`,
     };
   });
 

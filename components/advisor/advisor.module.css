@@ -105,6 +105,16 @@
   overflow-wrap: anywhere;
 }
 
+.caution {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-left: 4px solid var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 .draftNote {
   margin: 0;
   font-size: 0.8rem;
