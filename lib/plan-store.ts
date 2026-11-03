@@ -39,7 +39,20 @@ const KEEP = (col: string) =>
  *   取り消し前の診断を使ったプランが後から書き込まれない
  * - UPDATE の SET は更新前の値で評価されるため、previous_plan の判定に元の current_plan を使える
  */
-export function invalidateDiagnosisStatements(demoId: string): Stmt[] {
+export function invalidateDiagnosisStatements(
+  demoId: string,
+  /**
+   * 省略可。指定すると各文の WHERE に「AND guard.sql」を足す（同じ batch の前の文が書けたときだけ効かせるため。
+   * 設定の保存 lib/company-settings.ts が使う）
+   */
+  guard?: { sql: string; args: (string | number | null)[] },
+): Stmt[] {
+  const stmts = baseInvalidateStatements(demoId);
+  if (!guard) return stmts;
+  return stmts.map((s) => ({ sql: `${s.sql} AND ${guard.sql}`, args: [...s.args, ...guard.args] }));
+}
+
+function baseInvalidateStatements(demoId: string): Stmt[] {
   return [
     { sql: `DELETE FROM diagnoses WHERE demo_id = ?`, args: [demoId] },
     { sql: `DELETE FROM action_plans WHERE demo_id = ?`, args: [demoId] },

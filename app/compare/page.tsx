@@ -6,8 +6,7 @@ import type { DiagnosisRecord, FinancialSummary, UpsideSummary } from "@/lib/pla
 import SummarySections, { SHARED_SUMMARY_LABELS } from "@/components/SummarySections";
 import DiagnosisSection from "@/components/diagnosis/DiagnosisSection";
 import UpsideSection from "@/components/upside/UpsideSection";
-import { getUpsideSummary } from "@/lib/financials";
-import { getDiagnosis, getFinancialSummary } from "@/components/server-data";
+import { getDiagnosis, getFinancialSummary, getUpsideSummary } from "@/components/server-data";
 
 export const dynamic = "force-dynamic";
 
@@ -54,27 +53,26 @@ export default async function ComparePage() {
   let financial: FinancialSummary | null = null;
   // 踏ん張れば伸びる余地（仮定の試算。ルールベースで計算済み）。お店の数字と一緒に出す
   let upside: UpsideSummary | null = null;
-  if (rows !== null && visible.length > 0) {
+  if (rows !== null && visible.length > 0 && demoId) {
+    // 決算の数字と試算は、このデモの設定（デモ用 ID ごと）から作る。試算の無い業種では upside は null
     try {
-      financial = await getFinancialSummary();
+      financial = await getFinancialSummary(demoId);
     } catch {
       financial = null;
     }
     if (financial) {
       try {
-        upside = getUpsideSummary();
+        upside = await getUpsideSummary(demoId);
       } catch {
         upside = null;
       }
     }
-    if (demoId) {
-      try {
-        const rec = await getDiagnosis(demoId);
-        // 画面に不要な内部情報（診断に使ったテーマの key）はブラウザへ送らない
-        diagnosis = rec ? { ...rec, basedOnThemeKeys: [] } : null;
-      } catch {
-        diagnosis = null;
-      }
+    try {
+      const rec = await getDiagnosis(demoId);
+      // 画面に不要な内部情報（診断に使ったテーマの key）はブラウザへ送らない
+      diagnosis = rec ? { ...rec, basedOnThemeKeys: [] } : null;
+    } catch {
+      diagnosis = null;
     }
   }
 
@@ -122,7 +120,7 @@ export default async function ComparePage() {
           <DiagnosisSection initialRecord={diagnosis} financial={financial} role={role} />
 
           {/* お店の数字（診断の欄の最後）のすぐ後に置く */}
-          {upside && <UpsideSection upside={upside} />}
+          <UpsideSection upside={upside} />
 
           <section className="card compare-shared" aria-labelledby="shared-title">
             <h2 id="shared-title">共有された内容（テーマ別）</h2>

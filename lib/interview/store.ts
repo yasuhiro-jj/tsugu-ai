@@ -187,6 +187,8 @@ export function deleteDemoDataStatements(demoId: string): { sql: string; args: s
     { sql: `DELETE FROM interviews WHERE demo_id = ?`, args: [demoId] },
     // AI参謀の会話（両方の役割とも。lib/advisor.ts）
     { sql: `DELETE FROM advisor_chats WHERE demo_id = ?`, args: [demoId] },
+    // 会社の設定（設定ダッシュボード。lib/company-settings.ts）。消すとつぐみの初期値に戻る
+    { sql: `DELETE FROM company_settings WHERE demo_id = ?`, args: [demoId] },
     // 診断・学習・講座・90日計画・決算サマリー資料（reports）は deletePlanDataStatements の中
     ...deletePlanDataStatements(demoId),
   ];

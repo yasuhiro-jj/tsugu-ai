@@ -1,4 +1,6 @@
-// DELETE /api/demo：このブラウザ（デモ用 ID）の面談・診断・学習（講座の進み具合を含む）・90日計画のデータを、両方の役割とも全部消す（デモ撮影のやり直し用）。
+// DELETE /api/demo：このブラウザ（デモ用 ID）の面談・診断・学習（講座の進み具合を含む）・90日計画・資料・AI参謀の会話・
+// 会社の設定（company_settings。消すとつぐみの初期値に戻る）のデータを、両方の役割とも全部消す（デモ撮影のやり直し用）。
+// 削除する表の一覧は lib/interview/store.ts の deleteDemoDataStatements。
 // 本文は不要。Origin は確認する。AI 呼び出し回数の記録は消さない（上限の悪用対策）。
 
 import type { NextRequest } from "next/server";

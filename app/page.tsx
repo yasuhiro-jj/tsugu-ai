@@ -40,6 +40,15 @@ export default function HomePage() {
         </ol>
         <p className="muted">役割は上のボタンでいつでも切り替えられます。</p>
       </section>
+      <section className="card" aria-labelledby="settings-entry-title">
+        <h2 id="settings-entry-title">会社に合わせる</h2>
+        <p>
+          業種・会社の概要・面談する人・決算の数字を入れると、その会社に合わせて面談や診断が動きます。
+        </p>
+        <p>
+          <Link href="/settings">会社の設定を変える（任意。初期値は架空の「つぐみ」）</Link>
+        </p>
+      </section>
       <section className="card">
         <h2>デモをやり直す</h2>
         <p>

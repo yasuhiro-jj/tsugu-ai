@@ -4,9 +4,10 @@ import styles from "./UpsideSection.module.css";
 // 踏ん張れば伸びる余地（仮定の試算）。数字はサーバー（lib/financials.ts の getUpsideSummary）が
 // ルールベースで計算済み。表示用の文字（effectText など）はそのまま使い、画面では計算しない。
 // 良し悪し・おすすめの印は付けない（どれを選ぶかはお二人が決める）。フックなし。
+// 試算の無い業種（飲食店以外）では upside が null になる。そのときは欄ごと出さない。
 
-export default function UpsideSection({ upside }: { upside: UpsideSummary }) {
-  if (upside.items.length === 0) return null;
+export default function UpsideSection({ upside }: { upside: UpsideSummary | null }) {
+  if (!upside || upside.items.length === 0) return null;
 
   return (
     <section className="card" aria-labelledby="upside-title">
@@ -36,6 +37,12 @@ export default function UpsideSection({ upside }: { upside: UpsideSummary }) {
         <p className={styles.note} role="note">
           {upside.note}
         </p>
+        {/* 飲食店で決算の数字を書き換えたときだけ（ランチ・宴会の前提はつぐみの例のまま） */}
+        {upside.exampleNote && (
+          <p className={styles.note} role="note">
+            {upside.exampleNote}
+          </p>
+        )}
       </div>
 
       <table className={`data-table ${styles.table}`} aria-describedby="upside-title">

@@ -22,6 +22,9 @@ import { DIAGNOSIS_SYSTEM_TEMPLATE, fillPlanTemplate, tagRef } from "./prompts/p
 import { arr, callJsonAi, dataBlock, DATA_NOTE, obj, str, type AiDeps, type JsonAiRequest } from "./ai/json-ai";
 import { invalidateDiagnosis, nowIso } from "./plan-store";
 import type { Role } from "./role";
+import type { CompanySettings } from "./settings-types";
+import { TSUGUMI_SETTINGS } from "./industry-presets";
+import { loadCompanySettings, MSG_SETTINGS_CHANGED, settingsRevCondition } from "./company-settings";
 
 export const MSG_NEED_BOTH_SHARED = "先代・後継者の二人とも共有したテーマが1つ以上そろうと診断できます";
 
@@ -117,7 +120,7 @@ function summaryForPrompt(s: ThemeSummary) {
  * 比較結果（共有済みだけ）から AI への依頼を組み立てる。
  * rows は getComparisonFrom の戻り値だけを渡すこと（非共有のテーマは null になっている）。
  */
-export function buildDiagnosisRequest(allRows: ComparisonRow[]): JsonAiRequest {
+export function buildDiagnosisRequest(allRows: ComparisonRow[], settings: CompanySettings = TSUGUMI_SETTINGS): JsonAiRequest {
   const rows = bothSharedRows(allRows);
   const senior = rows
     .filter((r) => r.predecessor !== null)
@@ -152,7 +155,7 @@ export function buildDiagnosisRequest(allRows: ComparisonRow[]): JsonAiRequest {
     "次の入力をもとに、出力形式どおりの JSON だけを返してください。",
     dataBlock("senior_shared", senior),
     dataBlock("successor_shared", successor),
-    dataBlock("financials", financialsForPrompt()),
+    dataBlock("financials", financialsForPrompt(settings.financials)),
   ].join("\n\n");
   return {
     purpose: "diagnosis",
@@ -321,14 +324,19 @@ export async function runDiagnosis(deps: AiDeps, demoId: string, role: Role): Pr
   if (basedOn.predecessor.length === 0 || basedOn.successor.length === 0) {
     throw new ServiceError(409, MSG_NEED_BOTH_SHARED);
   }
-  const diagnosis = await callJsonAi(deps, demoId, role, buildDiagnosisRequest(rows), parseDiagnosis);
+  // 会社の設定（決算の数字）。AI を待つ間に設定が変わったら保存しない（rev の照合）
+  const cfg = await loadCompanySettings(deps.db, demoId);
+  const diagnosis = await callJsonAi(deps, demoId, role, buildDiagnosisRequest(rows, cfg.settings), parseDiagnosis);
   const createdAt = nowIso();
-  await deps.db.execute({
-    sql: `INSERT INTO diagnoses (demo_id, diagnosis, based_on, created_at) VALUES (?, ?, ?, ?)
+  const sameSettings = settingsRevCondition(demoId, cfg.rev);
+  const ins = await deps.db.execute({
+    sql: `INSERT INTO diagnoses (demo_id, diagnosis, based_on, created_at)
+          SELECT ?, ?, ?, ? WHERE ${sameSettings.sql}
           ON CONFLICT(demo_id) DO UPDATE SET diagnosis = excluded.diagnosis, based_on = excluded.based_on,
             created_at = excluded.created_at`,
-    args: [demoId, JSON.stringify(diagnosis), JSON.stringify(basedOn), createdAt],
+    args: [demoId, JSON.stringify(diagnosis), JSON.stringify(basedOn), createdAt, ...sameSettings.args],
   });
+  if (ins.rowsAffected !== 1) throw new ServiceError(409, MSG_SETTINGS_CHANGED);
   // AI を待っている間に共有が取り消されていたら、ここで消える
   const saved = await getDiagnosisFrom(deps.db, demoId);
   if (!saved) throw new ServiceError(409, "共有の状態が変わりました。もう一度診断してください");

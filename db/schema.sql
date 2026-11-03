@@ -125,6 +125,19 @@ CREATE TABLE IF NOT EXISTS maintenance (
   last_run_at TEXT NOT NULL
 );
 
+-- 会社の設定（設定ダッシュボード。2026-11-03 追加。docs/settings-dashboard.md）。二人の共有物：demo_id ごとに1行。
+-- settings は検証済みの JSON（lib/company-settings.ts）。行が無い・JSON が壊れているときは架空の「つぐみ」の初期値。
+-- rev は保存のたびに +1（PUT の楽観ロックと、診断・資料・AI参謀を作る間に設定が変わっていないかの照合に使う）。
+-- DELETE /api/demo と保存期間の削除で消す。
+CREATE TABLE IF NOT EXISTS company_settings (
+  demo_id TEXT NOT NULL PRIMARY KEY,
+  settings TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  rev INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  updated_by_role TEXT CHECK (updated_by_role IS NULL OR updated_by_role IN ('predecessor', 'successor'))
+);
+
 -- 既存のデータベース向けの列追加（アプリは列が無いときだけ流す。lib/schema.ts の COLUMN_MIGRATIONS）
 -- ALTER TABLE action_plans ADD COLUMN diagnosis_created_at TEXT;
 -- ALTER TABLE advisor_chats ADD COLUMN pending_at TEXT;

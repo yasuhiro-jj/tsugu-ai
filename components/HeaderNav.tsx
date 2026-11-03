@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/plan", label: "90日行動計画" },
   { href: "/report", label: "資料" },
   { href: "/advisor", label: "AI参謀" },
+  { href: "/settings", label: "設定" },
 ] as const;
 
 function isCurrent(pathname: string, href: string): boolean {

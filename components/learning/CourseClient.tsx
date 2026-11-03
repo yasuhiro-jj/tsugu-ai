@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Course, CourseProgressStatus, LearningState } from "@/lib/plan-types";
 import { asObject, postJson } from "@/components/post-json";
+import CourseExampleNote from "@/components/settings/CourseExampleNote";
 import { LEVEL_LABELS, STATUS_CLASS } from "./labels";
 import AskPanel from "./AskPanel";
 import askStyles from "./AskPanel.module.css";
@@ -109,6 +110,7 @@ export default function CourseClient({ course, initialLevel, initialStatus }: Pr
         <h2 id="course-goal">この講座のゴール</h2>
         <p>{course.goal}</p>
         {course.linkedGap && <p className="plan-item__gap">診断とのつながり：{course.linkedGap}</p>}
+        <CourseExampleNote />
       </section>
 
       <section aria-labelledby="articles-title">

@@ -1,5 +1,5 @@
 // AI面談の指示文（Notion「AI面談の指示文 下書き v1」を正とする）。
-// INTERVIEW_SYSTEM_TEMPLATE は原文のまま。{{ }} はアプリが差し込む。
+// INTERVIEW_SYSTEM_TEMPLATE は原文のまま（「# テーマ」の一覧だけは {{theme_list}} にして、設定のテーマの補足から作る。lib/settings-prompt.ts）。{{ }} はアプリが差し込む。
 // その後ろに「立場ごとの追加指示」「良い返事・悪い返事の例」「アプリからの補足」を付け足す。
 //
 // 重要：ここで組み立てる system / messages には、今の面談相手（demo_id ＋ role）のデータだけを入れる。
@@ -56,12 +56,7 @@ export const INTERVIEW_SYSTEM_TEMPLATE = `あなたは「TSUGU AI」の面談役
 - 締めの質問（相手にまだ伝えていない気持ち）は、特に本音を話しやすいよう「話した内容は、あなたが選ばない限り相手には見えません」と伝える。
 
 # テーマ（この順番で、自然な流れで聞く）
-1. 経営方針：守りたいもの、変えてもよいもの
-2. 取引先：主な仕入れ先と、約束や条件
-3. 業務の勘どころ：仕込み・発注・値決めの判断
-4. 人材：スタッフについての気がかり
-5. 資金繰り：お店の借金の返済や、毎月のお金の出入り
-6. 締め：相手にまだ伝えていない気持ち
+{{theme_list}}
 
 # 出力形式（必ずこのJSONだけを返す）
 {
@@ -119,6 +114,7 @@ export type PromptVars = {
   level: string;
   company_context: string;
   current_theme: string;
+  theme_list: string;
   followup_count: string;
   remaining_themes: string;
 };

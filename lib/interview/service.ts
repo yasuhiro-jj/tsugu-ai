@@ -25,7 +25,11 @@ import type {
 } from "../interview-types";
 import type { Role } from "../role";
 import { ServiceError } from "../errors";
-import { COMPANY_CONTEXT, DEMO_PROFILES } from "../demo-profiles";
+import { DEMO_PROFILES } from "../demo-profiles";
+import type { CompanySettings } from "../settings-types";
+import { TSUGUMI_SETTINGS } from "../industry-presets";
+import { getCompanySettingsFrom } from "../company-settings";
+import { companyContextFor, currentThemeFor, displayNameFor, profileFor, themeListFor } from "../settings-prompt";
 import {
   INTERVIEW_SYSTEM_TEMPLATE,
   REPLY_EXAMPLES,
@@ -100,7 +104,11 @@ function currentThemeOf(records: Map<ThemeKey, ThemeRecord>): ThemeKey | null {
   return null;
 }
 
-export function toState(role: Role, records: Map<ThemeKey, ThemeRecord>): InterviewState {
+export function toState(
+  role: Role,
+  records: Map<ThemeKey, ThemeRecord>,
+  settings: CompanySettings = TSUGUMI_SETTINGS,
+): InterviewState {
   const profile = DEMO_PROFILES[role];
   const themes: MyTheme[] = THEMES.map((t) => {
     const r = records.get(t.key)!;
@@ -120,7 +128,7 @@ export function toState(role: Role, records: Map<ThemeKey, ThemeRecord>): Interv
   });
   return {
     role,
-    displayName: profile.name,
+    displayName: displayNameFor(settings, role),
     partnerLabel: profile.partnerLabel,
     themes,
     currentThemeKey: current,
@@ -135,7 +143,7 @@ export async function getInterviewState(
   demoId: string,
   role: Role,
 ): Promise<InterviewState> {
-  return toState(role, await loadRecords(db, demoId, role));
+  return toState(role, await loadRecords(db, demoId, role), await getCompanySettingsFrom(db, demoId));
 }
 
 // ---- Claude に渡す内容の組み立て ----
@@ -161,11 +169,13 @@ export function buildInterviewRequest(params: {
   records: Map<ThemeKey, ThemeRecord>;
   themeKey: ThemeKey;
   pendingUserText?: string;
+  /** 会社の設定（省略時はつぐみの初期値）。名前・関係・知識レベル・概要・テーマの補足をここから */
+  settings?: CompanySettings;
 }): AiRequest {
   const { role, records, themeKey } = params;
-  const profile = DEMO_PROFILES[role];
+  const settings = params.settings ?? TSUGUMI_SETTINGS;
+  const profile = profileFor(settings, role);
   const rec = records.get(themeKey)!;
-  const theme = THEMES.find((t) => t.key === themeKey)!;
 
   const remaining = THEMES.filter(
     (t) => t.key !== themeKey && !DONE.has(records.get(t.key)!.status),
@@ -182,8 +192,9 @@ export function buildInterviewRequest(params: {
       name: profile.name,
       route: profile.route,
       level: profile.level,
-      company_context: COMPANY_CONTEXT,
-      current_theme: `${theme.label}（${theme.hint}）`,
+      company_context: companyContextFor(settings),
+      current_theme: currentThemeFor(settings, themeKey),
+      theme_list: themeListFor(settings),
       followup_count: String(rec.followupCount),
       remaining_themes: remaining.length ? remaining.join("、") : "なし",
     }),
@@ -243,9 +254,11 @@ async function callAi(
   });
 }
 
+/** 自分の面談の行（無ければ作る）と、会社の設定（二人の共有物。面談の指示文と表示名に使う）を読む */
 async function loadForWrite(db: Client, demoId: string, role: Role) {
   await ensureInterviewRows(db, demoId, role);
-  return loadRecords(db, demoId, role);
+  const [records, settings] = await Promise.all([loadRecords(db, demoId, role), getCompanySettingsFrom(db, demoId)]);
+  return { records, settings };
 }
 
 // ---- 操作 ----
@@ -253,13 +266,13 @@ async function loadForWrite(db: Client, demoId: string, role: Role) {
 /** 今のテーマの会話が空なら、最初の問いかけを AI に作らせて保存する。 */
 export async function startInterview(deps: Deps, demoId: string, role: Role): Promise<InterviewState> {
   const startedAt = (deps.now ?? Date.now)();
-  const records = await loadForWrite(deps.db, demoId, role);
+  const { records, settings } = await loadForWrite(deps.db, demoId, role);
   const themeKey = currentThemeOf(records);
-  if (themeKey === null) return toState(role, records);
+  if (themeKey === null) return toState(role, records, settings);
   const rec = records.get(themeKey)!;
-  if (rec.messages.length > 0 || rec.status !== "not_started") return toState(role, records);
+  if (rec.messages.length > 0 || rec.status !== "not_started") return toState(role, records, settings);
 
-  const out = await callAi(deps, demoId, role, buildInterviewRequest({ role, records, themeKey }), startedAt);
+  const out = await callAi(deps, demoId, role, buildInterviewRequest({ role, records, themeKey, settings }), startedAt);
   const updated: ThemeRecord = {
     ...rec,
     messages: [{ from: "ai", text: out.reply }],
@@ -268,7 +281,7 @@ export async function startInterview(deps: Deps, demoId: string, role: Role): Pr
   await saveRecord(deps.db, demoId, role, updated, rec.rev);
   await setCurrentTheme(deps.db, demoId, role, themeKey);
   records.set(themeKey, { ...updated, rev: rec.rev + 1 });
-  return toState(role, records);
+  return toState(role, records, settings);
 }
 
 /** 本人のメッセージを送り、AI の返事を保存する。AI が失敗したら入力文は保存しない。 */
@@ -280,7 +293,7 @@ export async function sendMessage(
 ): Promise<InterviewState> {
   const startedAt = (deps.now ?? Date.now)();
   const text = validateMessageText(rawText);
-  const records = await loadForWrite(deps.db, demoId, role);
+  const { records, settings } = await loadForWrite(deps.db, demoId, role);
   const themeKey = currentThemeOf(records);
   if (themeKey === null) throw new ServiceError(409, "面談はすべて終わっています");
   const rec = records.get(themeKey)!;
@@ -295,7 +308,7 @@ export async function sendMessage(
     );
   }
 
-  const req = buildInterviewRequest({ role, records, themeKey, pendingUserText: text });
+  const req = buildInterviewRequest({ role, records, themeKey, pendingUserText: text, settings });
   let out = await callAi(deps, demoId, role, req, startedAt);
 
   const wantsEnd = out.action !== "followup";
@@ -332,7 +345,7 @@ export async function sendMessage(
   }
   await saveRecord(deps.db, demoId, role, updated, rec.rev);
   records.set(themeKey, { ...updated, rev: rec.rev + 1 });
-  return toState(role, records);
+  return toState(role, records, settings);
 }
 
 /** 要約の確定／破棄。確定・破棄したら次の未着手テーマへ移る。 */
@@ -347,7 +360,7 @@ export async function decideSummary(
   const edited =
     decision === "confirm" && body.summary !== undefined ? validateSummary(body.summary) : undefined;
 
-  const records = await loadForWrite(db, demoId, role);
+  const { records, settings } = await loadForWrite(db, demoId, role);
   const rec = records.get(themeKey)!;
   const current = currentThemeOf(records);
 
@@ -368,7 +381,7 @@ export async function decideSummary(
   await saveRecord(db, demoId, role, updated, rec.rev);
   records.set(themeKey, { ...updated, rev: rec.rev + 1 });
   await setCurrentTheme(db, demoId, role, currentThemeOf(records));
-  return toState(role, records);
+  return toState(role, records, settings);
 }
 
 /** 共有の選択（confirmed のテーマだけ。何度でも変更可） */
@@ -380,7 +393,7 @@ export async function setShared(
 ): Promise<InterviewState> {
   const themeKey = validateThemeKey(body.themeKey);
   const shared = validateShared(body.shared);
-  const records = await loadForWrite(db, demoId, role);
+  const { records, settings } = await loadForWrite(db, demoId, role);
   const rec = records.get(themeKey)!;
   if (rec.status !== "confirmed") {
     throw new ServiceError(409, "確定した要約だけ共有を選べます");
@@ -397,7 +410,7 @@ export async function setShared(
     throw new ServiceError(409, MSG_CONFLICT);
   }
   records.set(themeKey, { ...updated, rev: rec.rev + 1 });
-  return toState(role, records);
+  return toState(role, records, settings);
 }
 
 /** このデモ用 ID のデータを全部消して、今の役割の初期状態を返す。 */

@@ -96,6 +96,15 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
   calls INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (demo_id, day)
 )`,
+  // 会社の設定（設定ダッシュボード。二人の共有物。demo_id ごとに1行。settings は検証済みの JSON。rev は保存のたびに +1）
+  `CREATE TABLE IF NOT EXISTS company_settings (
+  demo_id TEXT NOT NULL PRIMARY KEY,
+  settings TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  rev INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  updated_by_role TEXT CHECK (updated_by_role IS NULL OR updated_by_role IN ('predecessor', 'successor'))
+)`,
   // 保存期間の削除などの定期処理の実行時刻（1処理1行。SEC-201：実行間隔の制限に使う。demo_id は持たない）
   `CREATE TABLE IF NOT EXISTS maintenance (
   key TEXT NOT NULL PRIMARY KEY,

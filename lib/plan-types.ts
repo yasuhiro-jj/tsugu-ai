@@ -77,6 +77,8 @@ export type UpsideSummary = {
   operatingProfitAfter: number; // 改善後の営業利益 = 当期の営業利益 ＋ 合計（万円）
   operatingProfitAfterText: string; // 例：「+122万円」
   note: string; // 注記（実現を保証しない、など）
+  /** 飲食店で決算の数字を設定で書き換えたときだけ：「ランチ・宴会の前提はつぐみの例です」 */
+  exampleNote?: string;
 };
 
 // ---- 講座（内容は Notion「学習講座コンテンツ v1」で固定。AI は作らない） ----

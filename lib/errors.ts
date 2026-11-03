@@ -5,6 +5,8 @@ export class ServiceError extends Error {
   constructor(
     public readonly status: number,
     public readonly userMessage: string,
+    /** 応答の JSON に足してよい追加の項目（利用者に見せてよい値だけ。例：設定の fieldErrors） */
+    public readonly extra?: Record<string, unknown>,
   ) {
     super(userMessage);
     this.name = "ServiceError";

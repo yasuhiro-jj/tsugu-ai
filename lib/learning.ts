@@ -20,7 +20,9 @@ import type {
 } from "./plan-types";
 import { MSG_CONFLICT, ServiceError } from "./errors";
 import { getDb } from "./db";
-import { DEMO_PROFILES } from "./demo-profiles";
+import { getCompanySettingsFrom } from "./company-settings";
+import { INDUSTRY_PRESETS } from "./industry-presets";
+import { profileFor } from "./settings-prompt";
 import {
   COURSE_GAP_KEYWORDS,
   COURSE_IDS,
@@ -112,14 +114,23 @@ function parseLevel(v: unknown): Level {
  */
 export async function getLearningLevel(db: Client, demoId: string): Promise<Level> {
   const rs = await db.execute({ sql: `SELECT level FROM learning WHERE demo_id = ?`, args: [demoId] });
-  return parseLevel(rs.rows[0]?.level);
+  // 行がまだ無ければ、設定の後継者の知識レベル（初期値はつぐみの Lv1）
+  if (!rs.rows[0]) return (await getCompanySettingsFrom(db, demoId)).people.successorLevel;
+  return parseLevel(rs.rows[0].level);
+}
+
+/** 学習の行が無いときの初期値（設定の後継者の知識レベルと、業種の型の「学びたいこと」） */
+async function learningDefaults(db: Client, demoId: string): Promise<{ level: Level; wants: string }> {
+  const s = await getCompanySettingsFrom(db, demoId);
+  return { level: s.people.successorLevel, wants: INDUSTRY_PRESETS[s.industry].defaultWants };
 }
 
 async function ensureLearningRow(db: Client, demoId: string): Promise<LearningRow> {
+  const d = await learningDefaults(db, demoId);
   await db.execute({
     sql: `INSERT OR IGNORE INTO learning (demo_id, level, wants, current_plan, previous_plan, rev, updated_at)
-          VALUES (?, 'Lv1', ?, NULL, NULL, 0, ?)`,
-    args: [demoId, DEFAULT_WANTS, nowIso()],
+          VALUES (?, ?, ?, NULL, NULL, 0, ?)`,
+    args: [demoId, d.level, d.wants, nowIso()],
   });
   return (await loadLearningRow(db, demoId))!;
 }
@@ -175,9 +186,10 @@ export async function getLearningStateFrom(db: Client, demoId: string): Promise<
       previous = null;
     }
   }
+  const d = row ? null : await learningDefaults(db, demoId);
   return {
-    level: row?.level ?? "Lv1",
-    wants: row?.wants ?? DEFAULT_WANTS,
+    level: row?.level ?? d!.level,
+    wants: row?.wants ?? d!.wants,
     current,
     previous,
     progress: await loadProgress(db, demoId),
@@ -316,7 +328,8 @@ export async function createLearningPlan(
   const row = await ensureLearningRow(deps.db, demoId);
   const wants = wantsInput ?? row.wants;
   const progress = await loadProgress(deps.db, demoId);
-  const profile = DEMO_PROFILES.successor;
+  // 後継者の名前は設定から（初期値でなければ「」で囲む）。知識レベルは learning.level
+  const profile = profileFor(await getCompanySettingsFrom(deps.db, demoId), "successor");
 
   const courses = getCourses().map((c) => ({ course_id: c.id, title: c.title, level: c.level, goal: c.goal, 診断とのつながり: c.linkedGap }));
   const progressForPrompt = progress.map((p) => ({ course_id: p.courseId, status: p.status, score: p.score === null ? "未受験" : `${p.score}/5` }));

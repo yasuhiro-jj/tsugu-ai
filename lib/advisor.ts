@@ -33,8 +33,11 @@ import {
 import type { Role } from "./role";
 import { ServiceError, MSG_CONFLICT } from "./errors";
 import { getDb } from "./db";
-import { COMPANY_CONTEXT, DEMO_PROFILES } from "./demo-profiles";
-import { financialsForPrompt, upsideForPrompt } from "./financials";
+import { financialsForPrompt, periodNames, upsideForPrompt } from "./financials";
+import type { CompanySettings } from "./settings-types";
+import { TSUGUMI_SETTINGS } from "./industry-presets";
+import { loadCompanySettings, MSG_SETTINGS_CHANGED, settingsRevCondition } from "./company-settings";
+import { companyContextFor, profileFor } from "./settings-prompt";
 import { getDiagnosisFrom, toPublicDiagnosisRecord } from "./diagnosis";
 import { ADVISOR_SYSTEM_TEMPLATE } from "./prompts/advisor";
 import { arr, callJsonAi, dataBlock, dataNote, str, type AiDeps, type JsonAiMessage, type JsonAiRequest } from "./ai/json-ai";
@@ -212,14 +215,30 @@ async function saveChat(
   messages: AdvisorMessage[],
   reservedRev: number,
   diagnosisAt: string | null,
+  settingsRev: number,
 ): Promise<boolean> {
+  // 会社の設定が AI を待つ間に変わっていたら保存しない（設定の保存は会話の行も消すが、念のため rev でも照合する）
+  const sameSettings = settingsRevCondition(demoId, settingsRev);
   const rs = await db.execute({
     sql: `UPDATE advisor_chats SET messages = ?, rev = rev + 1, updated_at = ?, pending_at = NULL,
             diagnosis_created_at = COALESCE(?, diagnosis_created_at)
           WHERE demo_id = ? AND role = ? AND rev = ?
             AND (diagnosis_created_at IS NULL OR diagnosis_created_at = ?)
-            AND (? IS NULL OR EXISTS (SELECT 1 FROM diagnoses d WHERE d.demo_id = ? AND d.created_at = ?))`,
-    args: [JSON.stringify(messages), nowIso(), diagnosisAt, demoId, role, reservedRev, diagnosisAt, diagnosisAt, demoId, diagnosisAt],
+            AND (? IS NULL OR EXISTS (SELECT 1 FROM diagnoses d WHERE d.demo_id = ? AND d.created_at = ?))
+            AND ${sameSettings.sql}`,
+    args: [
+      JSON.stringify(messages),
+      nowIso(),
+      diagnosisAt,
+      demoId,
+      role,
+      reservedRev,
+      diagnosisAt,
+      diagnosisAt,
+      demoId,
+      diagnosisAt,
+      ...sameSettings.args,
+    ],
   });
   return rs.rowsAffected === 1;
 }
@@ -287,8 +306,8 @@ export function historyWindow(messages: AdvisorMessage[]): AdvisorMessage[] {
  * 本人の知識レベル（REV-005）。後継者は講座で上がる learning.level（講座の質問・解説と同じ getLearningLevel）、
  * 先代は learning を持たないので役割の初期値（demo-profiles）
  */
-async function advisorLevel(db: Client, demoId: string, role: Role): Promise<string> {
-  return role === "successor" ? getLearningLevel(db, demoId) : DEMO_PROFILES[role].level;
+async function advisorLevel(db: Client, demoId: string, role: Role, settings: CompanySettings): Promise<string> {
+  return role === "successor" ? getLearningLevel(db, demoId) : settings.people.predecessorLevel;
 }
 
 /** 診断（共有物）のうち AI に渡す部分。保存済みの診断が無ければ null */
@@ -309,23 +328,40 @@ export function buildAdvisorRequest(params: {
   history: AdvisorMessage[];
   text: string;
   diagnosis: Awaited<ReturnType<typeof diagnosisForPrompt>>;
-  /** 本人の知識レベル（advisorLevel）。省略時は役割の初期値 */
+  /** 本人の知識レベル（advisorLevel）。省略時は役割の初期値（設定の知識レベル） */
   level?: string;
+  /** 会社の設定（省略時はつぐみの初期値）。概要・決算の数字・業種（伸びる余地を出すか）をここから */
+  settings?: CompanySettings;
 }): JsonAiRequest {
-  const profile = DEMO_PROFILES[params.role];
+  const settings = params.settings ?? TSUGUMI_SETTINGS;
+  const profile = profileFor(settings, params.role);
+  const upside = upsideForPrompt(settings);
+  const extraNotes = [
+    "診断は、先代と後継者の二人が共有した内容から作られたものです。診断が無いときは、数字だけで答えてください。",
+  ];
+  if (upside) {
+    extraNotes.push(
+      "<shop_upside> は仮定の試算です。実現を保証しません。「この策が正解」と断定せず、前提条件と選択肢として扱ってください。",
+    );
+  } else {
+    extraNotes.push("この業種では改善策の試算は用意していません。改善の効果の金額を作らないでください。");
+  }
+  if (periodNames(settings.financials).userInput) {
+    extraNotes.push("数字は利用者が設定に入力したものです。出どころは「設定に入力した前期／当期の数字では」のように書き、決算期の年月は書かないでください。");
+  }
   const system = [
     fillTemplate(ADVISOR_SYSTEM_TEMPLATE, {
       role: profile.roleLabel,
       level: params.level ?? profile.level,
-      company_context: COMPANY_CONTEXT,
+      company_context: companyContextFor(settings),
     }),
     // 共通の注意書き（lib/ai/json-ai.ts）に、AI参謀だけの行をつなぐ。データは system の下のタグに入れる
-    dataNote("この指示文の下の <...> タグの中（お店の数字・試算・診断）", [
-      "診断は、先代と後継者の二人が共有した内容から作られたものです。診断が無いときは、数字だけで答えてください。",
-      "<shop_upside> は仮定の試算です。実現を保証しません。「この策が正解」と断定せず、前提条件と選択肢として扱ってください。",
-    ]),
-    dataBlock("shop_financials", financialsForPrompt()),
-    dataBlock("shop_upside", upsideForPrompt()),
+    dataNote(
+      upside ? "この指示文の下の <...> タグの中（お店の数字・試算・診断）" : "この指示文の下の <...> タグの中（お店の数字・診断）",
+      extraNotes,
+    ),
+    dataBlock("shop_financials", financialsForPrompt(settings.financials)),
+    ...(upside ? [dataBlock("shop_upside", upside)] : []),
     dataBlock("diagnosis", params.diagnosis ?? "まだ診断はありません"),
   ].join("\n\n");
 
@@ -364,13 +400,16 @@ export async function sendAdvisorMessage(
   if (turnsOf(chat.messages) >= ADVISOR_MAX_TURNS) throw new ServiceError(400, MSG_ADVISOR_TURN_LIMIT);
 
   const myAt = nowIso();
+  // 会社の設定（二人の共有物）。rev は保存のときに照合する（AI を待つ間に設定が変わったら保存しない）
+  const cfg = await loadCompanySettings(deps.db, demoId);
   const diagnosis = await diagnosisForPrompt(deps.db, demoId);
   const req = buildAdvisorRequest({
     role,
     history: chat.messages,
     text,
     diagnosis,
-    level: await advisorLevel(deps.db, demoId, role),
+    level: await advisorLevel(deps.db, demoId, role, cfg.settings),
+    settings: cfg.settings,
   });
 
   // 読んだ rev のまま予約できたときだけ AI を呼ぶ（chat.messages は予約の時点でも同じ内容）
@@ -405,9 +444,10 @@ export async function sendAdvisorMessage(
       ...(caution ? { caution } : {}),
     },
   ];
-  if (!(await saveChat(deps.db, demoId, role, messages, reservedRev, diagnosis?.created_at ?? null))) {
+  if (!(await saveChat(deps.db, demoId, role, messages, reservedRev, diagnosis?.created_at ?? null, cfg.rev))) {
     await release();
-    throw new ServiceError(409, MSG_CONFLICT);
+    const now = await loadCompanySettings(deps.db, demoId);
+    throw new ServiceError(409, now.rev !== cfg.rev ? MSG_SETTINGS_CHANGED : MSG_CONFLICT);
   }
   return toState(messages);
 }

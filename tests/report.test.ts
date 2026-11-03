@@ -175,8 +175,8 @@ describe("POST /api/report の中身（createReport）", () => {
     expect(s.results.table.rows.find((r) => r.label === "売上高")!.change).toBe("▲200万円");
     const up = getUpsideSummary();
     expect(s.outlook.scenarios.status_quo.operatingProfitText).toBe(up.operatingProfitBeforeText);
-    expect(s.outlook.scenarios.improved.operatingProfitText).toBe(up.operatingProfitAfterText);
-    expect(s.outlook.scenarios.improved.items).toEqual(up.items);
+    expect(s.outlook.scenarios.improved!.operatingProfitText).toBe(up.operatingProfitAfterText);
+    expect(s.outlook.scenarios.improved!.items).toEqual(up.items);
     expect(s.outlook.forecastLabel).toContain("予測");
     expect(s.outlook.assumptions).toContain(up.note);
     const plan = await getActionPlanFrom(db, DEMO_A);

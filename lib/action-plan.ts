@@ -22,6 +22,7 @@ import { arr, callJsonAi, dataBlock, DATA_NOTE, obj, str, type AiDeps } from "./
 import { jstToday, nowIso } from "./plan-store";
 import { usageDayKey } from "./ai/usage";
 import type { Role } from "./role";
+import { loadCompanySettings, MSG_SETTINGS_CHANGED, settingsRevCondition } from "./company-settings";
 
 export const MSG_NEED_DIAGNOSIS = "先に認識差の診断を行ってください";
 export const ACTION_PLAN_MAX_TOKENS = 3000;
@@ -248,6 +249,7 @@ export async function createActionPlan(
   body: Record<string, unknown>,
 ): Promise<ActionPlanState> {
   const startDate = validateStartDate(body.startDate);
+  const settingsRev = (await loadCompanySettings(deps.db, demoId)).rev;
   const diag = await getDiagnosisFrom(deps.db, demoId);
   if (!diag) throw new ServiceError(409, MSG_NEED_DIAGNOSIS);
   const learning = await getLearningStateFrom(deps.db, demoId);
@@ -293,14 +295,17 @@ export async function createActionPlan(
   );
 
   const now = nowIso();
-  await deps.db.execute({
+  // AI を待つ間に会社の設定が変わっていたら書かない（設定の保存は診断も消すので、下の loadValidRow でも消える。念のため rev でも照合）
+  const sameSettings = settingsRevCondition(demoId, settingsRev);
+  const ins = await deps.db.execute({
     sql: `INSERT INTO action_plans (demo_id, start_date, actions, message, diagnosis_created_at, rev, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+          SELECT ?, ?, ?, ?, ?, 0, ?, ? WHERE ${sameSettings.sql}
           ON CONFLICT(demo_id) DO UPDATE SET start_date = excluded.start_date, actions = excluded.actions,
             message = excluded.message, diagnosis_created_at = excluded.diagnosis_created_at,
             rev = action_plans.rev + 1, created_at = excluded.created_at, updated_at = excluded.updated_at`,
-    args: [demoId, startDate, JSON.stringify(out.actions), out.message, diag.createdAt, now, now],
+    args: [demoId, startDate, JSON.stringify(out.actions), out.message, diag.createdAt, now, now, ...sameSettings.args],
   });
+  if (ins.rowsAffected !== 1) throw new ServiceError(409, MSG_SETTINGS_CHANGED);
   // AI を待っている間に共有が取り消された／診断が作り直されていたら、作った計画は残さない（SEC-102）
   const saved = await loadValidRow(deps.db, demoId);
   if (!saved) throw new ServiceError(409, MSG_PLAN_CHANGED);

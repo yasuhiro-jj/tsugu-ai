@@ -175,14 +175,17 @@ export function SummaryView({ summary }: { summary: ReportSummary }) {
             <p className={styles.scenarioValue}>営業利益 {sq.operatingProfitText}</p>
             <p className={styles.small}>根拠：{sq.basis}</p>
           </div>
-          <div className={styles.scenario}>
-            <p className={styles.scenarioName}>{im.name}</p>
-            <p className={styles.scenarioValue}>営業利益 約{im.operatingProfitText}</p>
-            <p className={styles.small}>改善策の効果の合計：{im.totalEffectText}</p>
-            <p className={styles.small}>根拠：{im.basis}</p>
-          </div>
+          {/* 改善策あり案は、試算がある業種（飲食店）のときだけ。無ければ現状維持案だけを出す */}
+          {im && (
+            <div className={styles.scenario}>
+              <p className={styles.scenarioName}>{im.name}</p>
+              <p className={styles.scenarioValue}>営業利益 約{im.operatingProfitText}</p>
+              <p className={styles.small}>改善策の効果の合計：{im.totalEffectText}</p>
+              <p className={styles.small}>根拠：{im.basis}</p>
+            </div>
+          )}
         </div>
-        {im.items.length > 0 && (
+        {im && im.items.length > 0 && (
           <table className={`data-table ${styles.table}`} aria-label="改善策あり案の内訳（仮定の試算）">
             <thead>
               <tr>

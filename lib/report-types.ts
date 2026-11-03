@@ -90,7 +90,11 @@ export type ReportSummary = {
     forecastLabel: string;
     scenarios: {
       status_quo: { name: "現状維持案"; operatingProfit: number; operatingProfitText: string; basis: string };
-      improved: {
+      /**
+       * 改善策あり案。飲食店以外（設定の業種）では無い（伸びる余地の試算がつぐみの飲食店の前提のため）。
+       * 無いときは現状維持案だけを出す
+       */
+      improved?: {
         name: "改善策あり案";
         operatingProfit: number;
         operatingProfitText: string;

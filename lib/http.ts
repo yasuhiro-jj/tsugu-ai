@@ -112,7 +112,13 @@ export async function readJsonBody(request: Request): Promise<Record<string, unk
 
 /** 例外を利用者向けの応答に変換する。ログには種類だけを出す（本文・入力は出さない）。 */
 export function toErrorResponse(err: unknown, where: string): NextResponse<ApiError> {
-  if (err instanceof ServiceError) return errorJson(err.status, err.userMessage);
+  if (err instanceof ServiceError) {
+    if (err.extra) {
+      // ok / error は上書きさせない
+      return NextResponse.json({ ...err.extra, ok: false, error: err.userMessage }, { status: err.status });
+    }
+    return errorJson(err.status, err.userMessage);
+  }
   const name = err instanceof Error ? err.name : "UnknownError";
   console.error(JSON.stringify({ level: "error", where, error: name }));
   return errorJson(500, MSG_SERVER);

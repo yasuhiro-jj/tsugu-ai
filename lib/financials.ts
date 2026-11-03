@@ -3,8 +3,11 @@
 // 秘密情報・実在の財務データは含まない（画面・サーバーどちらから import してもよい）。
 
 import type { FinancialSummary, UpsideItem, UpsideSummary } from "./plan-types";
+import type { PeriodInput } from "./settings-types";
 
 export const FINANCIAL_SOURCE = "決算書（架空）2025年3月期・2026年3月期";
+/** 設定ダッシュボードで数字を書き換えたときの資料名（docs/settings-dashboard.md「呼び出し側」） */
+export const USER_FINANCIAL_SOURCE = "設定に入力した決算の数字（利用者入力）";
 
 export type PeriodData = {
   label: string;
@@ -61,7 +64,43 @@ export type Computed = {
   cashFlow: number; // 現金の動き（簡易）= 純利益 + 減価償却費 − 元本返済
 };
 
-export function computePeriod(p: PeriodData): Computed {
+/** 前期・当期の数字（設定の financials と同じ形。初期値はつぐみ） */
+export type FinancialsInput = { previous: PeriodInput; current: PeriodInput };
+/** 伸びる余地の計算に使う設定（CompanySettings の一部） */
+export type UpsideInput = { industry: string; financials: FinancialsInput };
+
+export const TSUGUMI_FINANCIALS: FinancialsInput = { previous: PREVIOUS_PERIOD, current: CURRENT_PERIOD };
+const TSUGUMI_UPSIDE_INPUT: UpsideInput = { industry: "restaurant", financials: TSUGUMI_FINANCIALS };
+
+const PERIOD_KEYS: readonly (keyof PeriodInput)[] = [
+  "sales",
+  "cogs",
+  "labor",
+  "otherSga",
+  "interest",
+  "netIncome",
+  "cash",
+  "debt",
+  "principalRepayment",
+  "depreciation",
+];
+
+/** 数字がつぐみの決算（架空）と同じか */
+export function isTsugumiFinancials(f: FinancialsInput): boolean {
+  return PERIOD_KEYS.every((k) => f.previous[k] === PREVIOUS_PERIOD[k] && f.current[k] === CURRENT_PERIOD[k]);
+}
+
+/** 資料名と期の名前。つぐみの数字なら決算期つき、利用者入力なら「前期」「当期」だけ */
+export type PeriodNames = { userInput: boolean; source: string; previous: string; current: string };
+
+export function periodNames(f: FinancialsInput = TSUGUMI_FINANCIALS): PeriodNames {
+  if (isTsugumiFinancials(f)) {
+    return { userInput: false, source: FINANCIAL_SOURCE, previous: PREVIOUS_PERIOD.label, current: CURRENT_PERIOD.label };
+  }
+  return { userInput: true, source: USER_FINANCIAL_SOURCE, previous: "前期", current: "当期" };
+}
+
+export function computePeriod(p: PeriodInput): Computed {
   const grossProfit = p.sales - p.cogs;
   const operatingProfit = grossProfit - p.labor - p.otherSga;
   const ordinaryProfit = operatingProfit - p.interest;
@@ -104,15 +143,23 @@ export function formatMonths(v: number): string {
   return `約${round1(v).toFixed(1)}か月分`;
 }
 
-export function getFinancialSummary(): FinancialSummary {
-  const p = PREVIOUS_PERIOD;
-  const c = CURRENT_PERIOD;
+/** 年間返済額（元本）の注記（例：「月20万円」）。前期と当期で違えば当期の分 */
+function repaymentNote(p: PeriodInput, c: PeriodInput): string {
+  const m = c.principalRepayment / 12;
+  const text = Number.isInteger(m) ? `月${m.toLocaleString("ja-JP")}万円` : `月約${round1(m).toFixed(1)}万円`;
+  return p.principalRepayment === c.principalRepayment ? text : `当期は${text}`;
+}
+
+/** 比較画面・資料の数字の表。f は設定の数字（初期値はつぐみ） */
+export function getFinancialSummary(f: FinancialsInput = TSUGUMI_FINANCIALS): FinancialSummary {
+  const p = f.previous;
+  const c = f.current;
   const pc = computePeriod(p);
   const cc = computePeriod(c);
   const row = (label: string, prev: string, cur: string, note?: string) =>
     note ? { label, previous: prev, current: cur, note } : { label, previous: prev, current: cur };
   return {
-    source: FINANCIAL_SOURCE,
+    source: periodNames(f).source,
     rows: [
       row("売上高", formatMan(p.sales), formatMan(c.sales)),
       row("売上原価", formatMan(p.cogs), formatMan(c.cogs), "材料費など"),
@@ -130,13 +177,13 @@ export function getFinancialSummary(): FinancialSummary {
       row("手元資金（期末）", formatMan(p.cash), formatMan(c.cash)),
       row("手元資金は月商の何か月分", formatMonths(pc.cashMonths), formatMonths(cc.cashMonths), "手元資金 ÷（売上高 ÷ 12）"),
       row("借入残高（期末）", formatMan(p.debt), formatMan(c.debt)),
-      row("年間返済額（元本）", formatMan(p.principalRepayment), formatMan(c.principalRepayment), "月20万円"),
+      row("年間返済額（元本）", formatMan(p.principalRepayment), formatMan(c.principalRepayment), repaymentNote(p, c)),
       row("減価償却費", formatMan(p.depreciation), formatMan(c.depreciation)),
       row(
         "当期の現金の動き",
         "—",
         formatMan(cc.cashFlow),
-        "純利益 ＋ 減価償却費 − 元本の返済（手元資金 1,200万円 → 808万円）",
+        `純利益 ＋ 減価償却費 − 元本の返済（手元資金 ${formatMan(p.cash)} → ${formatMan(c.cash)}）`,
       ),
     ],
   };
@@ -170,15 +217,33 @@ export function formatManSigned(v: number): string {
   return v > 0 ? `+${formatMan(v)}` : formatMan(v);
 }
 
-export function getUpsideSummary(): UpsideSummary {
-  const a = UPSIDE_ASSUMPTIONS;
-  const c = CURRENT_PERIOD;
-  const cc = computePeriod(c);
+/** 飲食店で数字を書き換えたときに添える文（ランチ・宴会の前提はつぐみのまま） */
+export const UPSIDE_EXAMPLE_NOTE = "ランチ・宴会の前提はつぐみの例です";
+
+/** 目標の率への改善の前提と効果。今の率がもう目標以下なら効果は 0（マイナスの「改善」を出さない） */
+function rateStep(name: string, rate: number, target: number, amount: number, sales: number) {
+  if (round1(rate) <= target) {
+    return { assumption: `${name} ${formatPercent(rate)}（目標 ${formatPercent(target)} 以下のため試算しない）`, raw: 0 };
+  }
   // 割り算の誤差を避けるため「金額 − 売上×目標率」で計算する（売上×(現在率−目標率) と同じ）
-  const costEffect = c.cogs - (c.sales * a.targetCostRate) / 100;
+  return { assumption: `${name} ${formatPercent(rate)} → ${formatPercent(target)}`, raw: amount - (sales * target) / 100 };
+}
+
+/**
+ * 踏ん張れば伸びる余地。引数なしはつぐみ。設定を渡したときは、飲食店以外なら null（比較画面・AI参謀・資料に出さない）。
+ * 飲食店で数字を書き換えていれば exampleNote を添える。
+ */
+export function getUpsideSummary(): UpsideSummary;
+export function getUpsideSummary(s: UpsideInput): UpsideSummary | null;
+export function getUpsideSummary(s: UpsideInput = TSUGUMI_UPSIDE_INPUT): UpsideSummary | null {
+  if (s.industry !== "restaurant") return null;
+  const a = UPSIDE_ASSUMPTIONS;
+  const c = s.financials.current;
+  const cc = computePeriod(c);
+  const cost = rateStep("原価率", cc.costRate, a.targetCostRate, c.cogs, c.sales);
   const lunchEffect = (a.lunchPriceUpYen * a.lunchMealsPerYear) / 10_000; // 円 → 万円
   const banquetEffect = (a.banquetExtraGroups * a.banquetPricePerGroup * (100 - a.banquetCostRate)) / 100;
-  const laborEffect = c.labor - (c.sales * a.targetLaborRate) / 100;
+  const labor = rateStep("人件費率", cc.laborRate, a.targetLaborRate, c.labor, c.sales);
 
   const item = (id: UpsideItem["id"], title: string, assumption: string, raw: number): UpsideItem => {
     const effect = round1(raw);
@@ -188,8 +253,8 @@ export function getUpsideSummary(): UpsideSummary {
     item(
       "costrate",
       "月末棚卸＋仕入れ・メニューの見直し",
-      `原価率 ${formatPercent(cc.costRate)} → ${formatPercent(a.targetCostRate)}`,
-      costEffect,
+      cost.assumption,
+      cost.raw,
     ),
     item(
       "lunchprice",
@@ -206,8 +271,8 @@ export function getUpsideSummary(): UpsideSummary {
     item(
       "shift",
       "曜日・時間帯別のシフト見直し",
-      `人件費率 ${formatPercent(cc.laborRate)} → ${formatPercent(a.targetLaborRate)}`,
-      laborEffect,
+      labor.assumption,
+      labor.raw,
     ),
   ];
   const total = round1(items.reduce((n, i) => n + i.effect, 0));
@@ -222,16 +287,23 @@ export function getUpsideSummary(): UpsideSummary {
     operatingProfitAfter: after,
     operatingProfitAfterText: formatManSigned(after),
     note: UPSIDE_NOTE,
+    ...(isTsugumiFinancials(s.financials) ? {} : { exampleNote: UPSIDE_EXAMPLE_NOTE }),
   };
 }
 
 /** AI に渡す試算の文字列（計算済み。仮定であることを明記） */
-export function upsideForPrompt(): string {
-  const u = getUpsideSummary();
+export function upsideForPrompt(): string;
+export function upsideForPrompt(s: UpsideInput): string | null;
+export function upsideForPrompt(s: UpsideInput = TSUGUMI_UPSIDE_INPUT): string | null {
+  const u = getUpsideSummary(s);
+  if (!u) return null;
   const lines = [
-    "踏ん張れば伸びる余地（仮定の試算。単位：万円。当期＝2026年3月期の数字から計算）",
+    u.exampleNote
+      ? "踏ん張れば伸びる余地（仮定の試算。単位：万円。当期の数字から計算）"
+      : "踏ん張れば伸びる余地（仮定の試算。単位：万円。当期＝2026年3月期の数字から計算）",
     "※実現を保証しない。断定せず、前提条件と選択肢として扱うこと。",
   ];
+  if (u.exampleNote) lines.push(`※${u.exampleNote}（この会社の実績ではない）。`);
   for (const i of u.items) lines.push(`- ${i.title}：前提 ${i.assumption}／営業利益への効果 ${i.effectText}`);
   lines.push(`- 合計：${u.totalText}（営業利益 当期 ${u.operatingProfitBeforeText} → 改善後 約${u.operatingProfitAfterText}）`);
   lines.push(`注記：${u.note}`);
@@ -239,9 +311,13 @@ export function upsideForPrompt(): string {
 }
 
 /** AI に渡す文字列（計算済み。資料名と対象期間つき）。 */
-export function financialsForPrompt(): string {
-  const s = getFinancialSummary();
-  const lines = [`資料：${s.source}（単位：万円。前期＝2025年3月期、当期＝2026年3月期）`];
+export function financialsForPrompt(f: FinancialsInput = TSUGUMI_FINANCIALS): string {
+  const s = getFinancialSummary(f);
+  const lines = [
+    periodNames(f).userInput
+      ? `資料：${s.source}（単位：万円。前期・当期の2期分。決算期の年月は入力されていない）`
+      : `資料：${s.source}（単位：万円。前期＝2025年3月期、当期＝2026年3月期）`,
+  ];
   for (const r of s.rows) {
     lines.push(`- ${r.label}：前期 ${r.previous}／当期 ${r.current}${r.note ? `（${r.note}）` : ""}`);
   }

@@ -5,7 +5,8 @@ import "server-only";
 // 守ること（CLAUDE.md「必ず守る動作」・オーナー指示 2026-11-03）：
 // - AI への入力は次の5つだけ：お店の数字（financialsForPrompt）／試算（upsideForPrompt）／
 //   公開用に変換した保存済みの診断（getDiagnosisFrom → toPublicDiagnosisRecord）／
-//   90日計画の行動（文・担当・期限・状態だけ）／お店の概要（COMPANY_CONTEXT）。
+//   90日計画の行動（文・担当・期限・状態だけ）／お店の概要（会社の設定。初期値は COMPANY_CONTEXT）。
+//   決算の数字・会社名・業種・概要は会社の設定（lib/company-settings.ts）から。飲食店以外は試算（改善策あり案）を出さない
 //   面談の要約・会話、AI参謀の会話、学習プラン（理由・希望を含む）は DB からも読まない（SEC-104）
 // - 数字はすべてアプリが計算する。保存するのは AI の文だけで、数字の欄は表示のたびに lib/financials.ts から作る
 //   （AI の出力で数字が上書きされることは無い）
@@ -20,19 +21,22 @@ import type { ReportNumberRow, ReportNumberTable, ReportPoint, ReportState } fro
 import type { PlanAction } from "./plan-types";
 import { ServiceError } from "./errors";
 import { getDb } from "./db";
-import { COMPANY_CONTEXT } from "./demo-profiles";
 import {
   computePeriod,
-  CURRENT_PERIOD,
-  FINANCIAL_SOURCE,
   financialsForPrompt,
+  formatMan,
   formatManSigned,
   getFinancialSummary,
   getUpsideSummary,
-  PREVIOUS_PERIOD,
+  periodNames,
   round1,
   upsideForPrompt,
+  type FinancialsInput,
 } from "./financials";
+import type { CompanySettings } from "./settings-types";
+import { TSUGUMI_SETTINGS } from "./industry-presets";
+import { loadCompanySettings, MSG_SETTINGS_CHANGED, settingsRevCondition } from "./company-settings";
+import { companyContextFor, industryTextFor, isTsugumi } from "./settings-prompt";
 import { getDiagnosisFrom, toPublicDiagnosisRecord } from "./diagnosis";
 import { byDue, getActionPlanFrom, PHASE_LABEL } from "./action-plan";
 import { REPORT_SYSTEM } from "./prompts/report";
@@ -60,9 +64,7 @@ const PURPOSE_MAX = 600;
 const QUESTIONS_MIN = 2;
 const QUESTIONS_MAX = 6;
 
-const PREV_COL = "前期（2025年3月期）";
-const CUR_COL = "当期（2026年3月期）";
-const COLUMNS = { previous: PREV_COL, current: CUR_COL };
+// 列の見出し・資料名は数字から決める（つぐみの数字なら「前期（2025年3月期）」、利用者入力なら「前期」。lib/financials.ts の periodNames）
 
 // ---- AI の出力（保存するのはこれだけ） ----
 
@@ -168,8 +170,8 @@ export function parseReportAi(v: Record<string, unknown>): ReportAiParts | null 
 // ---- アプリが作る部分（数字・固定文） ----
 
 /** getFinancialSummary() の行をラベルで取り出す（数字は必ずここから。AI の値は使わない） */
-function pickRows(labels: string[], changes: Record<string, string> = {}): ReportNumberRow[] {
-  const all = getFinancialSummary().rows;
+function pickRows(fin: FinancialsInput, labels: string[], changes: Record<string, string> = {}): ReportNumberRow[] {
+  const all = getFinancialSummary(fin).rows;
   return labels.map((label) => {
     const r = all.find((x) => x.label === label);
     if (!r) throw new Error(`financial row missing: ${label}`);
@@ -180,14 +182,15 @@ function pickRows(labels: string[], changes: Record<string, string> = {}): Repor
   });
 }
 
-function table(rows: ReportNumberRow[]): ReportNumberTable {
-  return { source: FINANCIAL_SOURCE, columns: COLUMNS, rows };
+function table(fin: FinancialsInput, rows: ReportNumberRow[]): ReportNumberTable {
+  const n = periodNames(fin);
+  return { source: n.source, columns: { previous: n.previous, current: n.current }, rows };
 }
 
 /** 前期との差（金額は万円、比率はポイント） */
-function changes() {
-  const p = PREVIOUS_PERIOD;
-  const c = CURRENT_PERIOD;
+function changes(fin: FinancialsInput) {
+  const p = fin.previous;
+  const c = fin.current;
   const pc = computePeriod(p);
   const cc = computePeriod(c);
   const man = (a: number, b: number) => formatManSigned(b - a);
@@ -259,19 +262,30 @@ function reportHasAssertive(ai: ReportAiParts): boolean {
 export function buildReportState(
   ai: ReportAiParts,
   meta: { createdAt: string; diagnosisCreatedAt: string; actions: PlanAction[] },
+  /** 会社の設定（省略時はつぐみの初期値）。会社名・業種・概要・決算の数字・伸びる余地を出すか */
+  settings: CompanySettings = TSUGUMI_SETTINGS,
 ): ReportState {
-  const ch = changes();
-  const up = getUpsideSummary();
+  const fin = settings.financials;
+  const names = periodNames(fin);
+  const ch = changes(fin);
+  // 飲食店以外は null（改善策あり案を出さない。現状維持案だけ）
+  const up = getUpsideSummary(settings);
   const createdDate = jstToday(new Date(meta.createdAt));
   const hasPlan = meta.actions.length > 0;
   const sources = [
-    `${FINANCIAL_SOURCE}（単位：万円）`,
+    `${names.source}（単位：万円）`,
     `認識差の診断（${jstDateTime(meta.diagnosisCreatedAt)} 作成。二人とも共有したテーマから作成）`,
-    "改善策の試算（当期の数字から計算した仮定。実現を保証しない）",
   ];
+  if (up) sources.push("改善策の試算（当期の数字から計算した仮定。実現を保証しない）");
   if (hasPlan) sources.push("二人の90日計画");
+  const def = isTsugumi(settings);
+  const companyName = def ? COMPANY_NAME : settings.company.name;
 
-  const indicator = (labels: string[]) => pickRows(labels, ch);
+  const pick = (labels: string[]) => pickRows(fin, labels, ch);
+  const indicator = (labels: string[]) => pick(labels);
+  // 今の営業利益（現状維持案）。伸びる余地が無い業種でもここで計算する
+  const opBefore = round1(computePeriod(fin.current).operatingProfit);
+  const statusQuoBasis = `${names.current}の営業利益がそのまま続くと仮定（${names.source}）`;
   const pendingNote = "要確認：この版では外部の統計データは扱っていません。自店の数字で見るべき指標だけを示します。";
 
   // 言い切りに見える表現の確認（SEC-302）。表示のたびに保存済みの AI の文から決める（ログは作成時だけ）
@@ -289,19 +303,19 @@ export function buildReportState(
         no: 1,
         title: "基本情報",
         by: "app",
-        companyName: COMPANY_NAME,
-        industry: INDUSTRY,
-        overview: COMPANY_CONTEXT,
-        period: "2026年3月期（比較：2025年3月期）",
+        companyName,
+        industry: def ? INDUSTRY : industryTextFor(settings),
+        overview: settings.company.overview,
+        period: names.userInput ? "当期（比較：前期）" : "2026年3月期（比較：2025年3月期）",
         createdDate,
         sources,
       },
-      results: { no: 2, title: "決算の要点", by: "app+ai", table: table(pickRows(RESULT_LABELS, ch)), comment: ai.results_comment },
+      results: { no: 2, title: "決算の要点", by: "app+ai", table: table(fin, pick(RESULT_LABELS)), comment: ai.results_comment },
       financial: {
         no: 3,
         title: "財務の状態",
         by: "app+ai",
-        table: table(pickRows(FINANCIAL_LABELS, ch)),
+        table: table(fin, pick(FINANCIAL_LABELS)),
         comment: ai.financial_comment,
       },
       strengthsAndIssues: {
@@ -327,7 +341,7 @@ export function buildReportState(
             indicators: indicator(["支払利息", "借入残高（期末）", "年間返済額（元本）"]),
           },
         ],
-        source: `自社の指標：${FINANCIAL_SOURCE}`,
+        source: `自社の指標：${names.source}`,
       },
       outlook: {
         no: 6,
@@ -337,25 +351,36 @@ export function buildReportState(
         scenarios: {
           status_quo: {
             name: "現状維持案",
-            operatingProfit: up.operatingProfitBefore,
-            operatingProfitText: up.operatingProfitBeforeText,
-            basis: `当期（2026年3月期）の営業利益がそのまま続くと仮定（${FINANCIAL_SOURCE}）`,
+            operatingProfit: up ? up.operatingProfitBefore : opBefore,
+            operatingProfitText: up ? up.operatingProfitBeforeText : formatMan(opBefore),
+            basis: statusQuoBasis,
           },
-          improved: {
-            name: "改善策あり案",
-            operatingProfit: up.operatingProfitAfter,
-            operatingProfitText: up.operatingProfitAfterText,
-            totalEffectText: up.totalText,
-            items: up.items,
-            basis: `当期の営業利益 ${up.operatingProfitBeforeText} に、${up.items.length}つの改善策の効果の合計 ${up.totalText} を足した試算`,
-          },
+          ...(up
+            ? {
+                improved: {
+                  name: "改善策あり案" as const,
+                  operatingProfit: up.operatingProfitAfter,
+                  operatingProfitText: up.operatingProfitAfterText,
+                  totalEffectText: up.totalText,
+                  items: up.items,
+                  basis: `当期の営業利益 ${up.operatingProfitBeforeText} に、${up.items.length}つの改善策の効果の合計 ${up.totalText} を足した試算`,
+                },
+              }
+            : {}),
         },
-        assumptions: [
-          "当期（2026年3月期）の数字をもとに、1年分の効果を計算しています。",
-          ...up.items.map((i) => `${i.title}：${i.assumption}（効果 ${i.effectText}）`),
-          `${up.items.length}つの改善策をすべて実施し、ほかの条件（客数・物価・金利など）は変わらないと仮定しています。`,
-          up.note,
-        ],
+        assumptions: up
+          ? [
+              `${names.current}の数字をもとに、1年分の効果を計算しています。`,
+              ...up.items.map((i) => `${i.title}：${i.assumption}（効果 ${i.effectText}）`),
+              `${up.items.length}つの改善策をすべて実施し、ほかの条件（客数・物価・金利など）は変わらないと仮定しています。`,
+              ...(up.exampleNote ? [`${up.exampleNote}（この会社の実績ではありません）。`] : []),
+              up.note,
+            ]
+          : [
+              `${names.current}の営業利益がそのまま続くと仮定しています。ほかの条件（売上・物価・金利など）は変わらないと仮定しています。`,
+              "この業種では改善策の試算（改善策あり案）は用意していません。",
+              "試算は仮定にもとづくもので、実現を保証しない。",
+            ],
         viewpoints: ai.outlook_viewpoints,
       },
       actions: {
@@ -382,9 +407,9 @@ export function buildReportState(
       title: "銀行への相談用資料（下書き）",
       isDraft: true,
       createdDate,
-      companyName: COMPANY_NAME,
+      companyName,
       purpose: ai.bank_doc.purpose,
-      numbers: table(pickRows(BANK_LABELS, ch)),
+      numbers: table(fin, pick(BANK_LABELS)),
       questions: ai.bank_doc.questions,
       note: "融資の可否や条件は銀行が判断します。この資料は相談のための下書きで、結果を約束するものではありません。",
     },
@@ -397,21 +422,42 @@ export function buildReportState(
  * AI への依頼を組み立てる。渡すのは5つ（お店の概要・数字・試算・公開用の診断・90日計画の行動の文/担当/期限/状態）だけ。
  * diagnosis は toPublicDiagnosisRecord(...).diagnosis を渡すこと。
  */
-export function buildReportRequest(diagnosis: unknown, actions: PlanAction[]): JsonAiRequest {
+export function buildReportRequest(
+  diagnosis: unknown,
+  actions: PlanAction[],
+  settings: CompanySettings = TSUGUMI_SETTINGS,
+): JsonAiRequest {
   const plan = actions.length
     ? actions.map((a) => ({ 文: a.title, 担当: a.owner, 期限: a.due, 状態: a.status }))
     : "未作成";
+  const def = isTsugumi(settings);
+  const upside = upsideForPrompt(settings);
   const user = [
     "次の入力をもとに、出力形式どおりの JSON だけを返してください。",
-    dataBlock("company", { 会社名: COMPANY_NAME, 業種: INDUSTRY, 概要: COMPANY_CONTEXT }),
-    dataBlock("financials", financialsForPrompt()),
-    dataBlock("upside", upsideForPrompt()),
+    dataBlock(
+      "company",
+      def
+        ? { 会社名: COMPANY_NAME, 業種: INDUSTRY, 概要: companyContextFor(settings) }
+        : { 会社名: settings.company.name, 業種: industryTextFor(settings), 概要: settings.company.overview || "未記入" },
+    ),
+    dataBlock("financials", financialsForPrompt(settings.financials)),
+    dataBlock("upside", upside ?? "この業種では改善策の試算を用意していません（改善策あり案は無い）"),
     dataBlock("diagnosis", diagnosis),
     dataBlock("action_plan", plan),
   ].join("\n\n");
+  // 初期値（つぐみ）以外で、指示文の前提と違うところだけ補足する（指示文の本文は変えない）
+  const notes: string[] = [];
+  if (periodNames(settings.financials).userInput) {
+    notes.push("- 数字は利用者が設定に入力したもの。期の名前は「前期」「当期」とだけ書き、決算期の年月（2025年3月期など）は書かない。");
+  }
+  if (!upside) {
+    notes.push(
+      "- この業種では改善策の試算は無い。outlook_viewpoints は「現状維持案」を見るときの観点（2〜4件）にし、改善策の効果の金額を作らない。",
+    );
+  }
   return {
     purpose: "report",
-    system: [REPORT_SYSTEM, DATA_NOTE].join("\n\n"),
+    system: [REPORT_SYSTEM, DATA_NOTE, ...(notes.length ? [["# アプリからの補足", ...notes].join("\n")] : [])].join("\n\n"),
     messages: [{ role: "user", content: user }],
     schema: REPORT_SCHEMA as unknown as Record<string, unknown>,
     maxTokens: REPORT_MAX_TOKENS,
@@ -448,11 +494,17 @@ export async function getReportFrom(db: Client, demoId: string): Promise<ReportS
   const diag = await getDiagnosisFrom(db, demoId);
   if (diag && loaded.ai && loaded.diagnosisCreatedAt === diag.createdAt) {
     const plan = await getActionPlanFrom(db, demoId);
-    return buildReportState(loaded.ai, {
-      createdAt: loaded.createdAt,
-      diagnosisCreatedAt: loaded.diagnosisCreatedAt,
-      actions: plan.actions,
-    });
+    // 設定を変えると資料は消える（lib/company-settings.ts）ので、残っている資料は今の設定で作ったもの
+    const { settings } = await loadCompanySettings(db, demoId);
+    return buildReportState(
+      loaded.ai,
+      {
+        createdAt: loaded.createdAt,
+        diagnosisCreatedAt: loaded.diagnosisCreatedAt,
+        actions: plan.actions,
+      },
+      settings,
+    );
   }
   try {
     await db.execute({
@@ -477,22 +529,29 @@ export async function createReport(deps: AiDeps, demoId: string, role: Role): Pr
   const diag = await getDiagnosisFrom(deps.db, demoId);
   if (!diag) throw new ServiceError(409, MSG_REPORT_NEED_DIAGNOSIS);
   const plan = await getActionPlanFrom(deps.db, demoId);
-  const req = buildReportRequest(toPublicDiagnosisRecord(diag).diagnosis, plan.actions);
+  const cfg = await loadCompanySettings(deps.db, demoId);
+  const req = buildReportRequest(toPublicDiagnosisRecord(diag).diagnosis, plan.actions, cfg.settings);
   const ai = await callJsonAi(deps, demoId, role, req, parseReportAi);
   // 言い切りに見える表現があれば、種類だけをログに出す（本文は出さない。注記は buildReportState で付く。SEC-302）
   cautionFor("report.create", reportAiTexts(ai));
 
   const now = nowIso();
-  // 今の診断がまだ同じときだけ書く（AI を待つ間に取り消し・作り直しがあれば書かない）
-  await deps.db.execute({
+  // 今の診断がまだ同じで、設定も変わっていないときだけ書く（AI を待つ間に取り消し・作り直し・設定の変更があれば書かない）
+  const sameSettings = settingsRevCondition(demoId, cfg.rev);
+  const ins = await deps.db.execute({
     sql: `INSERT INTO reports (demo_id, content, diagnosis_created_at, created_at, updated_at)
           SELECT ?, ?, ?, ?, ?
           WHERE EXISTS (SELECT 1 FROM diagnoses WHERE demo_id = ? AND created_at = ?)
+            AND ${sameSettings.sql}
           ON CONFLICT(demo_id) DO UPDATE SET content = excluded.content,
             diagnosis_created_at = excluded.diagnosis_created_at,
             created_at = excluded.created_at, updated_at = excluded.updated_at`,
-    args: [demoId, JSON.stringify(ai), diag.createdAt, now, now, demoId, diag.createdAt],
+    args: [demoId, JSON.stringify(ai), diag.createdAt, now, now, demoId, diag.createdAt, ...sameSettings.args],
   });
+  if (ins.rowsAffected !== 1) {
+    const nowCfg = await loadCompanySettings(deps.db, demoId);
+    if (nowCfg.rev !== cfg.rev) throw new ServiceError(409, MSG_SETTINGS_CHANGED);
+  }
   // 書いたあとにも照合する（共有の取り消しで診断が無効になっていれば、ここで消えて null）
   const saved = await getReportFrom(deps.db, demoId);
   if (!saved) throw new ServiceError(409, MSG_REPORT_CHANGED);

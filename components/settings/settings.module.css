@@ -1,0 +1,154 @@
+/* 設定画面（/settings）。色・角丸は globals.css の変数に合わせる */
+
+.caution {
+  border-left: 4px solid var(--color-accent);
+  background: var(--color-accent-soft);
+  font-weight: 600;
+}
+
+.caution p {
+  margin: 0;
+}
+
+.form {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.control {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.counter {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.fieldError {
+  margin: 4px 0 0;
+  color: var(--color-accent);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+/* 決算：前期・当期の2列。狭い画面ではカードを縦に並べる */
+.periods {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.period {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.period legend {
+  padding: 0 6px;
+  font-weight: 700;
+}
+
+.numRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 9.5em;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 8px 0;
+}
+
+.numRow .label {
+  margin: 0;
+  font-weight: 500;
+}
+
+.numInput {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.numInput input {
+  width: 100%;
+  min-width: 0;
+  text-align: right;
+}
+
+.unit {
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.numError {
+  grid-column: 1 / -1;
+}
+
+.themeLabel {
+  font-weight: 600;
+}
+
+.presetNote {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+}
+
+.savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin-top: 8px;
+  padding: 12px 0;
+  background: var(--color-bg);
+  border-top: 1px solid var(--color-border);
+}
+
+.savebar :global(.button-row) {
+  margin: 0;
+}
+
+.success {
+  margin: 12px 0 0;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .grid2,
+  .periods {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 360px) {
+  .numRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
