@@ -42,3 +42,6 @@ screenshots/
 # デモ動画の出力物と道具（video/ のスクリプト・台本・原稿・字幕は残す）
 video/out/
 video/node_modules/
+
+# オーナーの声の録音（個人の声のため Git に載せない）
+video/voice/
