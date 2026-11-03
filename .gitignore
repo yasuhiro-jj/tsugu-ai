@@ -38,3 +38,7 @@ CLAUDE.local.md
 
 # 画面確認用スクリプトの出力
 screenshots/
+
+# デモ動画の出力物と道具（video/ のスクリプト・台本・原稿・字幕は残す）
+video/out/
+video/node_modules/
