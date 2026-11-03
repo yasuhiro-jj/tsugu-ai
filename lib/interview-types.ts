@@ -48,6 +48,11 @@ export type InterviewState = {
   /** 確定後、共有をまだ選んでいないテーマ（あれば画面で共有の選択を先に出す） */
   pendingShareThemeKey: ThemeKey | null;
   finished: boolean;
+  /**
+   * 会話履歴：確定したテーマの会話（自分の分だけ。オーナー指示 2026-11-03）。
+   * 破棄したテーマは会話を残さない作りなので含まれない。相手の会話は絶対に含めない。
+   */
+  history: { key: ThemeKey; label: string; messages: ChatMessage[] }[];
 };
 
 // ---- リクエスト ----

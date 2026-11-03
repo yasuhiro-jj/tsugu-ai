@@ -135,6 +135,12 @@ export function toState(
     messages: current ? records.get(current)!.messages : [],
     pendingShareThemeKey: pending ? pending.key : null,
     finished: current === null,
+    // records は本人の役割の行だけ（loadRecords が demo_id と role で絞る）なので、相手の会話は入らない
+    history: THEMES.filter((t) => records.get(t.key)!.status === "confirmed").map((t) => ({
+      key: t.key,
+      label: t.label,
+      messages: records.get(t.key)!.messages,
+    })),
   };
 }
 

@@ -10,6 +10,7 @@ import ChatPanel from "./ChatPanel";
 import SummaryCard from "./SummaryCard";
 import ShareChoice from "./ShareChoice";
 import MySummaries from "./MySummaries";
+import InterviewHistory, { historyItemId } from "./InterviewHistory";
 
 type Action = "start" | "message" | "summary" | "share";
 
@@ -29,6 +30,9 @@ export default function InterviewClient() {
   const [shareSavingKey, setShareSavingKey] = useState<ThemeKey | null>(null);
   // ページを開いた時点で既に会話があったときだけ「続きから再開」を出す（この画面内で開始した直後は出さない）
   const [resume, setResume] = useState<{ key: ThemeKey; label: string } | null>(null);
+
+  // 会話履歴で開いているテーマ
+  const [openHistoryKeys, setOpenHistoryKeys] = useState<ReadonlySet<ThemeKey>>(() => new Set());
 
   const loadedRef = useRef(false);
   const startedRef = useRef<Set<ThemeKey>>(new Set());
@@ -123,6 +127,29 @@ export default function InterviewClient() {
     setShareSavingKey(null);
   }
 
+  const toggleHistory = useCallback((key: ThemeKey, open: boolean) => {
+    setOpenHistoryKeys((prev) => {
+      const next = new Set(prev);
+      if (open) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
+
+  /** 進み具合のカードから：該当テーマを開き、そこまで移動して見出しにフォーカスを移す */
+  const openHistoryFromProgress = useCallback(
+    (key: ThemeKey) => {
+      toggleHistory(key, true);
+      window.setTimeout(() => {
+        const el = document.getElementById(historyItemId(key));
+        if (!el) return;
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        el.querySelector<HTMLElement>("summary")?.focus({ preventScroll: true });
+      }, 0);
+    },
+    [toggleHistory],
+  );
+
   if (loadStatus === "loading" && !state) {
     return (
       <section className="card" role="status">
@@ -157,6 +184,19 @@ export default function InterviewClient() {
     ? (state.themes.find((t) => t.key === state.currentThemeKey)?.label ?? themeLabel(state.currentThemeKey))
     : null;
 
+  const history = state.history ?? [];
+  const historyKeys = new Set(history.map((h) => h.key));
+  const historySection = (
+    <InterviewHistory
+      history={history}
+      themes={state.themes}
+      partnerLabel={state.partnerLabel}
+      openKeys={openHistoryKeys}
+      onToggle={toggleHistory}
+      onSetAll={(open) => setOpenHistoryKeys(open ? new Set(history.map((h) => h.key)) : new Set())}
+    />
+  );
+
   let disabledReason: string | null = null;
   if (awaitingTheme) {
     disabledReason = "下のまとめを確認するまで、入力はできません。";
@@ -177,7 +217,12 @@ export default function InterviewClient() {
         </p>
       )}
 
-      <ThemeProgress themes={state.themes} currentThemeKey={state.currentThemeKey} />
+      <ThemeProgress
+        themes={state.themes}
+        currentThemeKey={state.currentThemeKey}
+        historyKeys={historyKeys}
+        onOpenHistory={openHistoryFromProgress}
+      />
 
       {error && (
         <div className="card notice error-box">
@@ -242,6 +287,9 @@ export default function InterviewClient() {
           </>
         )
       )}
+
+      {/* 会話履歴：終了後は上のほう（終了の案内の直後）、途中は今の会話の下 */}
+      {historySection}
 
       <MySummaries
         themes={state.themes}

@@ -1,0 +1,113 @@
+/* 会話履歴（AI面談の画面）。吹き出しは globals.css の .bubble を使う */
+.list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  padding: 12px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.label {
+  overflow-wrap: anywhere;
+}
+
+.count {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.body {
+  margin-top: 12px;
+}
+
+.log {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 2px 8px;
+}
+
+.log :global(.bubble) {
+  overflow-wrap: anywhere;
+}
+
+.summaryTitle {
+  margin: 16px 0 4px;
+  font-size: 1rem;
+}
+
+.note {
+  font-size: 0.85rem;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.head h2 {
+  margin: 0;
+}
+
+.progress {
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--color-muted);
+  margin-left: 8px;
+}
+
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.item {
+  scroll-margin-top: 16px;
+}
+
+/* テーマの進み具合：確定したテーマのカードを押すと会話履歴へ移動（ThemeProgress から使う） */
+.cardButton {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cardButton:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.cardHint {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--color-primary);
+  text-decoration: underline;
+}
