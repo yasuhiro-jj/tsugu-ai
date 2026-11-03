@@ -39,11 +39,14 @@ type Props = {
   articleTitle: string;
 };
 
+const MAX_HISTORY = 5;
+
 export default function AskPanel({ courseId, articleNo, articleTitle }: Props) {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState(false);
-  const [answer, setAnswer] = useState<{ question: string; answer: AskAnswer } | null>(null);
+  // これまでの質問と答え（新しい順・最大 MAX_HISTORY 件。画面の中だけで覚え、保存はしない）
+  const [answers, setAnswers] = useState<{ question: string; answer: AskAnswer }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const sending = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -98,7 +101,15 @@ export default function AskPanel({ courseId, articleNo, articleTitle }: Props) {
       setError(r.error);
       return;
     }
-    setAnswer({ question: q, answer: r.data });
+    setAnswers((prev) => [{ question: q, answer: r.data }, ...prev].slice(0, MAX_HISTORY));
+    // 次の質問を前の質問と重ねないよう、答えが出たら入力欄を空にする（オーナー指示 2026-11-03）
+    clearForVoice();
+    inputRef.current?.focus();
+  }
+
+  function clearQuestion() {
+    clearForVoice();
+    inputRef.current?.focus();
   }
 
   function fillExample(text: string) {
@@ -140,7 +151,7 @@ export default function AskPanel({ courseId, articleNo, articleTitle }: Props) {
 
       <form onSubmit={(e) => void submit(e)} noValidate>
         <label htmlFor={inputId} className={styles.label}>
-          「{articleTitle}」についての質問
+          {answers.length > 0 ? "次の質問を入力してください" : `「${articleTitle}」についての質問`}
         </label>
         <input
           ref={inputRef}
@@ -177,6 +188,16 @@ export default function AskPanel({ courseId, articleNo, articleTitle }: Props) {
           >
             閉じる
           </button>
+          {question.length > 0 && !pending && (
+            <button
+              type="button"
+              className="button button--secondary button--small"
+              onClick={clearQuestion}
+              aria-label="入力欄を消して、新しい質問を書く"
+            >
+              入力欄を消す
+            </button>
+          )}
           {/* 欄を開いているときだけ出る（閉じているときはこの部分自体を描かない） */}
           <MicButton
             onText={handleVoiceText}
@@ -190,30 +211,35 @@ export default function AskPanel({ courseId, articleNo, articleTitle }: Props) {
 
       <div role="status" aria-live="polite">
         {pending && <p className={styles.waiting}>考えています…（{seconds}秒）</p>}
-        {!pending && answer && (
-          <div className="explain">
-            <p className="explain__label">質問：{answer.question}</p>
-            <p className={styles.answerText}>{answer.answer.text}</p>
-            {answer.answer.terms.length > 0 && (
-              <>
-                <p className={styles.termsTitle}>ことばの説明</p>
-                <dl className={styles.terms}>
-                  {answer.answer.terms.map((t, i) => (
-                    <div key={i}>
-                      <dt>{t.term}</dt>
-                      <dd>{t.meaning}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </>
-            )}
-            {answer.answer.caution && (
-              <p className={styles.note} role="note">
-                <strong>{answer.answer.caution}</strong>
-              </p>
-            )}
+        {answers.length > 0 && (
+          <>
+            <p className={styles.termsTitle}>{answers.length > 1 ? `これまでの質問と答え（新しい順・${answers.length}件）` : "質問と答え"}</p>
+            {answers.map((a, idx) => (
+              <div className="explain" key={answers.length - idx}>
+                <p className="explain__label">質問：{a.question}</p>
+                <p className={styles.answerText}>{a.answer.text}</p>
+                {a.answer.terms.length > 0 && (
+                  <>
+                    <p className={styles.termsTitle}>ことばの説明</p>
+                    <dl className={styles.terms}>
+                      {a.answer.terms.map((t, i) => (
+                        <div key={i}>
+                          <dt>{t.term}</dt>
+                          <dd>{t.meaning}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </>
+                )}
+                {a.answer.caution && (
+                  <p className={styles.note} role="note">
+                    <strong>{a.answer.caution}</strong>
+                  </p>
+                )}
+              </div>
+            ))}
             <p className={styles.note}>AIによる説明です。記事にない数字は答えません。税金・融資・法律の判断は専門家に確認してください</p>
-          </div>
+          </>
         )}
       </div>
       {error && (
