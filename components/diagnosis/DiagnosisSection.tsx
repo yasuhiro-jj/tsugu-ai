@@ -10,6 +10,7 @@ import { formatDateTime } from "@/components/format";
 import { useElapsedSeconds } from "@/components/use-elapsed";
 import DiagnosisView from "./DiagnosisView";
 import FinancialTable from "./FinancialTable";
+import styles from "./DiagnosisView.module.css";
 
 type Props = {
   initialRecord: DiagnosisRecord | null;
@@ -90,7 +91,7 @@ export default function DiagnosisSection({ initialRecord, financial, role }: Pro
 
       {record && (
         <div className="diagnosis-result">
-          <h3 ref={resultRef} tabIndex={-1} className="diagnosis-result__title">
+          <h3 id="diagnosis-result" ref={resultRef} tabIndex={-1} className="diagnosis-result__title">
             診断の結果
             {formatDateTime(record.createdAt) && (
               <span className="diagnosis-result__time">
@@ -103,13 +104,23 @@ export default function DiagnosisSection({ initialRecord, financial, role }: Pro
             <br />
             継ぐ・継がない、税務・融資などの判断は、お二人と専門家で行ってください。
           </p>
-          <DiagnosisView diagnosis={record.diagnosis} />
+          <DiagnosisView
+            diagnosis={record.diagnosis}
+            afterQuestions={
+              // 学習プランは後継者本人のページなので、案内は後継者にだけ出す（MVP 4：診断で学習プランが変わる）
+              role === "successor" ? (
+                <div className={styles.relearn} role="note">
+                  <p>
+                    この診断をもとに学習プランを作り直すと、学ぶ順番が診断を反映したものになります。前のプランとの違いも並べて見られます。
+                  </p>
+                  <Link href="/learning" className="button">
+                    学習プランを見直す
+                  </Link>
+                </div>
+              ) : null
+            }
+          />
           <div className="button-row next-links">
-            {role === "successor" && (
-              <Link href="/learning" className="button">
-                学習プランへ
-              </Link>
-            )}
             <Link href="/plan" className={role === "successor" ? "button button--secondary" : "button"}>
               90日計画へ
             </Link>

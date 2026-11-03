@@ -4,6 +4,7 @@ import { getRole } from "@/lib/role";
 import { getDemoId } from "@/lib/demo";
 import type { Course, LearningState } from "@/lib/plan-types";
 import CourseClient from "@/components/learning/CourseClient";
+import { displayCourseTitle } from "@/components/learning/labels";
 import { getCourse, getLearningState, isCourseId } from "@/components/server-data";
 
 export const dynamic = "force-dynamic";
@@ -71,7 +72,7 @@ export default async function CoursePage({ params }: { params: Promise<{ courseI
       <p className="breadcrumb">
         <Link href="/learning">学習プラン</Link> ＞ 講座
       </p>
-      <h1 className="page-title">{course.title}</h1>
+      <h1 className="page-title">{displayCourseTitle(course.title)}</h1>
       {state === null && (
         <section className="card notice">
           <p role="alert">学習の記録を読み込めませんでした。採点はできますが、時間をおいて読み込み直してください。</p>

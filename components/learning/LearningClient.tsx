@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import type { Course, LearningState } from "@/lib/plan-types";
 import { asObject, postJson } from "@/components/post-json";
@@ -14,10 +15,12 @@ type Props = {
   courses: Pick<Course, "id" | "title" | "level" | "goal">[];
   /** 「学びたいこと」の最大文字数（サーバーの上限に合わせる） */
   wantsMax: number;
+  /** 認識差の診断があるか（null = 確かめられなかった。そのときは案内を出さない） */
+  hasDiagnosis?: boolean | null;
 };
 
 /** 後継者の学習プラン（POST /api/learning/plan で作る・作り直す） */
-export default function LearningClient({ initialState, courses, wantsMax: WANTS_MAX }: Props) {
+export default function LearningClient({ initialState, courses, wantsMax: WANTS_MAX, hasDiagnosis = null }: Props) {
   const [state, setState] = useState<LearningState>(initialState);
   const [wants, setWants] = useState(initialState.wants ?? "");
   const [pending, setPending] = useState(false);
@@ -91,6 +94,17 @@ export default function LearningClient({ initialState, courses, wantsMax: WANTS_
             {wantsLength}/{WANTS_MAX}
           </span>
         </p>
+        {hasDiagnosis === false && (
+          <p className="muted" role="note">
+            まだ認識差の診断がありません。診断のあとに作り直すと、診断を反映した順番になります。
+            <Link href="/compare">認識差の比較へ</Link>
+          </p>
+        )}
+        {hasDiagnosis === true && current && !current.usedDiagnosis && (
+          <p className="muted" role="note">
+            認識差の診断ができています。作り直すと、診断を反映した順番になり、前のプランと並べて見られます。
+          </p>
+        )}
         <div className="button-row">
           <button
             type="button"

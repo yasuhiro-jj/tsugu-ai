@@ -1,0 +1,64 @@
+/* 診断の結果：長い内容を畳んで、見せ場（認識の違い）を先に見せる */
+
+.more {
+  margin-top: 8px;
+}
+
+.moreSummary {
+  cursor: pointer;
+  min-height: 44px;
+  padding: 10px 0;
+  color: var(--color-primary);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.common {
+  margin: 0;
+}
+
+.commonSummary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.commonSummary::before {
+  content: "▶";
+  font-size: 0.75rem;
+  color: var(--color-primary);
+}
+
+.common[open] > .commonSummary::before {
+  content: "▼";
+}
+
+.commonSummary::-webkit-details-marker {
+  display: none;
+}
+
+.commonSummary {
+  list-style: none;
+}
+
+.inlineTitle {
+  display: inline;
+  margin: 0;
+}
+
+/* 学習プランの見直しの案内 */
+.relearn {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.relearn p {
+  margin: 0 0 8px;
+}

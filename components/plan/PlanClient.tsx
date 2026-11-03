@@ -6,6 +6,7 @@ import { asObject, postJson, type PostResult } from "@/components/post-json";
 import { deleteJson } from "./delete-json";
 import { formatDateTime, formatDay } from "@/components/format";
 import { useElapsedSeconds } from "@/components/use-elapsed";
+import { displayCourseTitle } from "@/components/learning/labels";
 import styles from "./PlanClient.module.css";
 
 // 90日行動計画（先代・後継者どちらも閲覧・更新できる）。
@@ -417,7 +418,7 @@ function ActionRow({ action, courseTitles, pending, error, startDate, canDelete,
   const dueHintId = useId();
   // 期限の入力中の値（null = 未編集で、保存済みの期限を表示）。日付は1文字ずつ変わるため、ボタンで保存する
   const [dueDraft, setDueDraft] = useState<string | null>(null);
-  const course = action.linked_course ? (courseTitles[action.linked_course] ?? action.linked_course) : "";
+  const course = action.linked_course ? displayCourseTitle(courseTitles[action.linked_course] ?? action.linked_course) : "";
   const range = startDate ? phaseRange(startDate, action.phase) : null;
   const dueValue = dueDraft ?? action.due;
   const dueChanged = dueDraft !== null && dueDraft !== action.due;

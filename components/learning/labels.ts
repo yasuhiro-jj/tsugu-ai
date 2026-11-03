@@ -16,7 +16,17 @@ export const STATUS_CLASS: Record<CourseProgressStatus, string> = {
   復習をおすすめ: "badge badge--awaiting_confirmation",
 };
 
-/** 講座 ID → 講座名（見つからなければ ID をそのまま） */
+/**
+ * 講座名の先頭の番号（講座データの「1. 資金繰りの基本」の「1. 」）を表示用に外す。講座データは変えない。
+ * 学習プランの番号の丸・「おすすめ n番目」と番号が重なって見えるため。
+ */
+export function displayCourseTitle(title: string): string {
+  const t = title.replace(/^\s*\d+\s*[.．、)）]\s*/, "");
+  return t === "" ? title : t;
+}
+
+/** 講座 ID → 表示用の講座名（先頭の番号は外す。見つからなければ ID をそのまま） */
 export function courseTitle(courses: Pick<Course, "id" | "title">[], id: CourseId | string): string {
-  return courses.find((c) => c.id === id)?.title ?? id;
+  const found = courses.find((c) => c.id === id);
+  return found ? displayCourseTitle(found.title) : id;
 }

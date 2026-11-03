@@ -93,7 +93,12 @@ export default async function ComparePage() {
           <nav className="page-jump" aria-label="このページの中">
             <ul>
               <li>
-                <a href="#diagnosis-title">{diagnosis ? "診断結果を見る" : "認識差を診断する"}</a>
+                {/* 診断があれば結果の見出しへ、まだなら診断の操作へ移動する */}
+                {diagnosis ? (
+                  <a href="#diagnosis-result">診断結果を見る</a>
+                ) : (
+                  <a href="#diagnosis-title">認識差を診断する</a>
+                )}
               </li>
               <li>
                 <a href="#shared-title">共有された内容（{visible.length}テーマ）</a>

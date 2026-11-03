@@ -3,7 +3,7 @@ import { getRole } from "@/lib/role";
 import { getDemoId } from "@/lib/demo";
 import type { Course, LearningState } from "@/lib/plan-types";
 import LearningClient from "@/components/learning/LearningClient";
-import { getCourses, getLearningState, WANTS_MAX_CHARS } from "@/components/server-data";
+import { getCourses, getDiagnosis, getLearningState, WANTS_MAX_CHARS } from "@/components/server-data";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +46,8 @@ export default async function LearningPage() {
   const demoId = await getDemoId();
   let state: LearningState | null = null;
   let courses: Pick<Course, "id" | "title" | "level" | "goal">[] = [];
+  // 診断があるかどうかだけを画面へ渡す（診断の中身は渡さない）。読めなければ案内を出さない
+  let hasDiagnosis: boolean | null = null;
   if (demoId) {
     try {
       const [s, cs] = await Promise.all([getLearningState(demoId), getCourses()]);
@@ -54,6 +56,11 @@ export default async function LearningPage() {
       courses = cs.map((c) => ({ id: c.id, title: c.title, level: c.level, goal: c.goal }));
     } catch {
       state = null;
+    }
+    try {
+      hasDiagnosis = (await getDiagnosis(demoId)) !== null;
+    } catch {
+      hasDiagnosis = null;
     }
   }
 
@@ -64,7 +71,7 @@ export default async function LearningPage() {
         認識差の診断をもとに、後継者が優先して学ぶ順番を整理します。講座は短い記事と確認問題でできています。
       </p>
       {state ? (
-        <LearningClient initialState={state} courses={courses} wantsMax={WANTS_MAX_CHARS} />
+        <LearningClient initialState={state} courses={courses} wantsMax={WANTS_MAX_CHARS} hasDiagnosis={hasDiagnosis} />
       ) : (
         <section className="card notice">
           <h2>学習プランを読み込めませんでした</h2>
