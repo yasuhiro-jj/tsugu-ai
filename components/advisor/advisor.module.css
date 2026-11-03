@@ -61,6 +61,7 @@
 
 .aiText {
   margin: 0;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
@@ -129,6 +130,99 @@
   margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid var(--color-border);
+}
+
+/* ［公的な情報でも調べる］ */
+.webOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.webCheck {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 3px 0 0;
+  cursor: pointer;
+}
+
+.webCheck:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.webLabel {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.webHelp {
+  font-weight: 400;
+  font-size: 0.9rem;
+  color: var(--color-muted);
+}
+
+/* 出典 */
+.sources {
+  margin: 0 0 8px;
+}
+
+.sourcesTitle {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.sourceList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sourceItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 4px 0;
+}
+
+.sourceItem + .sourceItem {
+  border-top: 1px dotted var(--color-border);
+}
+
+.sourceKind {
+  display: inline-block;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.sourceKindPublic {
+  border-color: var(--color-primary);
+  background: var(--color-ok-soft);
+  color: var(--color-primary);
+}
+
+.sourceLink {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.noSources {
+  margin: 0 0 8px;
+  color: var(--color-muted);
+  font-weight: 600;
 }
 
 @media (max-width: 480px) {

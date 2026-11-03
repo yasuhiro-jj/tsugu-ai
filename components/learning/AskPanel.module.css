@@ -1,30 +1,26 @@
-/* 講座の記事の横（スマホでは下）の「AIに質問する」欄 */
+/* 講座の記事の下（幅いっぱい）の「この記事についてAIに質問する」欄 */
 
-.row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0 16px;
-  align-items: start;
-  margin-bottom: 16px;
+/* 記事1本と、その下の質問欄をまとめる（横並びにはしない） */
+.block {
+  margin-bottom: 20px;
 }
 
-.row > article {
+.block > article {
   margin-bottom: 8px;
 }
 
-@media (min-width: 760px) {
-  .row {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  }
+.closed {
+  margin: 0;
+}
 
-  .row > article {
-    margin-bottom: 0;
-  }
+.closed > button {
+  white-space: normal;
+  text-align: left;
 }
 
 .panel {
   min-width: 0;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   background: var(--color-surface);
@@ -32,58 +28,91 @@
   overflow-wrap: anywhere;
 }
 
-.toggle {
-  width: 100%;
-  white-space: normal;
-  text-align: center;
+/* 見出しと、右上の小さな［閉じる］ */
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .panelTitle {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 1rem;
   font-weight: 600;
+  line-height: 1.5;
 }
 
+.close {
+  flex: none;
+  min-height: 32px;
+  padding: 2px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.close:hover {
+  color: var(--color-text);
+  border-color: var(--color-muted);
+}
+
+.close:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 質問の例：小さな丸いボタン（チップ）を横に並べる */
 .examples {
-  margin: 12px 0;
+  margin: 0 0 12px;
 }
 
 .examplesTitle {
   margin: 0 0 6px;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--color-muted);
 }
 
-.exampleList {
+.chips {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.exampleButton {
-  width: 100%;
-  min-height: 40px;
-  padding: 6px 12px;
+.chips > li {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.chip {
+  max-width: 100%;
+  min-height: 34px;
+  padding: 4px 12px;
   border: 1px solid var(--color-primary);
-  border-radius: var(--radius);
+  border-radius: 999px;
   background: var(--color-surface);
   color: var(--color-primary);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   text-align: left;
   white-space: normal;
   overflow-wrap: anywhere;
   cursor: pointer;
 }
 
-.exampleButton:hover {
+.chip:hover {
   background: var(--color-ok-soft);
 }
 
-.exampleButton:disabled {
+.chip:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -94,15 +123,34 @@
   font-weight: 600;
 }
 
+/* 入力欄とボタン：スマホ幅では入力欄の下にボタン、PC 幅では横一列 */
+.inputRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inputCol {
+  min-width: 0;
+}
+
 .input {
   display: block;
   width: 100%;
   min-width: 0;
 }
 
+.inputMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+  margin-top: 2px;
+}
+
 .count {
-  margin: 4px 0 0;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   color: var(--color-muted);
   text-align: right;
 }
@@ -112,20 +160,130 @@
   font-weight: 600;
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
+.clear {
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
 }
 
-.actions > button {
+.voiceNotice {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.buttons > button {
   flex: 1 1 auto;
   white-space: normal;
 }
 
+/* マイク（と「音声入力について」）。スマホ幅では行いっぱい */
+.mic {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .inputRow {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .inputCol {
+    flex: 1 1 auto;
+  }
+
+  .buttons {
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+  }
+
+  .buttons > button {
+    flex: none;
+    min-height: 44px;
+  }
+
+  .mic {
+    flex: 0 1 auto;
+    max-width: 220px;
+  }
+}
+
+.help {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+/* やりとり：「あなた」は右寄せの吹き出し、「AI の答え」は左寄せのカード */
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.exchange {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.questionRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.question {
+  max-width: min(80%, 560px);
+  padding: 6px 12px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.who {
+  margin: 0 0 2px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.questionText {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.answer {
+  max-width: min(100%, 760px);
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-primary);
+  border-radius: 4px var(--radius) var(--radius) var(--radius);
+  background: #fff;
+}
+
+.answer .who {
+  color: var(--color-primary);
+}
+
 .waiting {
-  margin: 8px 0 0;
   color: var(--color-muted);
 }
 
@@ -134,10 +292,19 @@
   white-space: pre-wrap;
 }
 
+.termsBox {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--color-bg);
+  font-size: 0.85rem;
+}
+
 .termsTitle {
-  margin: 12px 0 4px;
-  font-size: 0.9rem;
+  margin: 0 0 4px;
+  font-size: 0.8rem;
   font-weight: 600;
+  color: var(--color-muted);
 }
 
 .terms {
@@ -149,16 +316,125 @@
 }
 
 .terms dd {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
 }
 
-.note {
+.terms > div:last-child dd {
+  margin-bottom: 0;
+}
+
+.caution {
   margin: 10px 0 0;
   font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+/* 出典 */
+.sources {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--color-border);
+}
+
+.sourceList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+
+.source {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sourceBody {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 札：色だけでなく文字（「公的機関」「民間サービス」）と枠の形でも分かるようにする */
+.tag {
+  flex: none;
+  padding: 0 8px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1.8;
+  white-space: nowrap;
+}
+
+.tagPublic {
+  border-color: var(--color-primary);
+  background: var(--color-ok-soft);
+  color: var(--color-primary);
+}
+
+.tagPrivate {
+  border-style: dashed;
+  border-color: var(--color-muted);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.privateNote {
+  font-size: 0.75rem;
   color: var(--color-muted);
 }
 
-/* マイクのボタン（注記つき）は行いっぱいに広げる（狭い欄でも文字が詰まらないように） */
-.actions > div {
-  flex: 1 1 100%;
+.noSources {
+  margin: 10px 0 0;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+/* それより前のやりとり（畳んでおく） */
+.older {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.olderTitle {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.olderItem {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.olderSummary {
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.olderItem[open] > .olderSummary {
+  white-space: normal;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.olderItem > .exchange {
+  padding: 8px 12px 10px;
+}
+
+.note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-muted);
 }

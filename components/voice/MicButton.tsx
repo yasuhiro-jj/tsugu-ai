@@ -237,12 +237,18 @@ export default function MicButton({ onText, disabled = false, size = "normal", h
         )}
       </div>
       {listening && interim && <p className={styles.interim}>聞き取り中：{interim}</p>}
-      <p id={noteId} className={styles.note}>
-        音声はブラウザの音声入力で文字にします（Chrome は Google、Edge はマイクロソフトのサーバーで文字にします）
-      </p>
-      <p className={styles.note}>
-        音声はたまに聞き間違えることがあります（例：「先代」が「仙台」になる）。送信する前に内容を確かめ、必要なら直してください。ご了承ください。
-      </p>
+      {/* 注記は場所を取らないよう1行に畳む（聞き取り中の文・メーター・エラーの案内は畳まずに常に見せる） */}
+      <details className={styles.about}>
+        <summary className={styles.aboutSummary}>音声入力について</summary>
+        <div id={noteId}>
+          <p className={styles.note}>
+            音声はブラウザの音声入力で文字にします（Chrome は Google、Edge はマイクロソフトのサーバーで文字にします）
+          </p>
+          <p className={styles.note}>
+            音声はたまに聞き間違えることがあります（例：「先代」が「仙台」になる）。送信する前に内容を確かめ、必要なら直してください。ご了承ください。
+          </p>
+        </div>
+      </details>
       <p className={styles.message} role="status" aria-live="polite">
         {message}
       </p>

@@ -154,6 +154,7 @@ npm run dev
 | `TURSO_AUTH_TOKEN` | Turso の認証トークン |
 | `CLAUDE_MODEL` | 使用するモデル名（省略時は `lib/config.ts` の既定値） |
 | `AI_DAILY_CALL_LIMIT` | アプリ全体の 1 日の AI 呼び出し上限（省略時 2,000。日本時間の毎朝 9:00 に戻る） |
+| `AI_WEB_SEARCH_DAILY_LIMIT` | 「公的な情報で調べる」（ウェブ検索つき）のアプリ全体の 1 日の上限（省略時 200。1回 約 $0.2 の目安。日本時間の毎朝 9:00 に戻る） |
 
 | コマンド | 内容 |
 |---|---|

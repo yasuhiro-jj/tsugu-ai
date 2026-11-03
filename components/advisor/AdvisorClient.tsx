@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { ADVISOR_MAX_LENGTH, type AdvisorMessage, type AdvisorState } from "@/lib/advisor-types";
+import { isAllowedSourceUrl } from "@/lib/web-search-domains";
 import { postJson } from "@/components/post-json";
 import { useElapsedSeconds } from "@/components/use-elapsed";
 import MicButton from "@/components/voice/MicButton";
@@ -38,6 +39,10 @@ export default function AdvisorClient({ initialState, suggestions }: Props) {
   const [state, setState] = useState<AdvisorState>(initialState);
   const [draft, setDraft] = useState("");
   const [pendingText, setPendingText] = useState<string | null>(null);
+  // ［公的な情報でも調べる］。送ったあとも状態はそのまま残す
+  const [web, setWeb] = useState(false);
+  // 送信中の1回が web かどうか（待ち表示の文を切り替える）
+  const [pendingWeb, setPendingWeb] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetMode, setResetMode] = useState<"idle" | "confirm" | "pending">("idle");
   const [resetError, setResetError] = useState<string | null>(null);
@@ -48,6 +53,8 @@ export default function AdvisorClient({ initialState, suggestions }: Props) {
   const confirmRef = useRef<HTMLParagraphElement>(null);
   const inputId = useId();
   const helpId = useId();
+  const webId = useId();
+  const webHelpId = useId();
 
   const sending = pendingText !== null;
   const seconds = useElapsedSeconds(sending);
@@ -94,9 +101,11 @@ export default function AdvisorClient({ initialState, suggestions }: Props) {
     busyRef.current = true;
     const text = draft.trim();
     setError(null);
+    const useWeb = web;
+    setPendingWeb(useWeb);
     setPendingText(text);
     try {
-      const res = await postJson("/api/advisor/message", { text }, pickState);
+      const res = await postJson("/api/advisor/message", useWeb ? { text, web: true } : { text }, pickState);
       if (res.ok) {
         setState(res.data);
         setDraft("");
@@ -153,6 +162,7 @@ export default function AdvisorClient({ initialState, suggestions }: Props) {
   }
 
   const empty = state.messages.length === 0 && !sending;
+  const waitingText = pendingWeb ? `公的な情報を調べています…（${seconds}秒）` : `考えています…（${seconds}秒）`;
 
   return (
     <section className="card chat" aria-labelledby="advisor-chat-title">
@@ -198,7 +208,7 @@ export default function AdvisorClient({ initialState, suggestions }: Props) {
             </div>
             <div className="bubble-row bubble-row--ai">
               <div className="bubble bubble--ai bubble--thinking" role="status">
-                考えています…（{seconds}秒）
+                {waitingText}
               </div>
             </div>
           </>
@@ -241,9 +251,26 @@ export default function AdvisorClient({ initialState, suggestions }: Props) {
             {voiceNotice}
           </p>
         )}
+        <div className={styles.webOption}>
+          <input
+            id={webId}
+            type="checkbox"
+            className={styles.webCheck}
+            checked={web}
+            onChange={(e) => setWeb(e.target.checked)}
+            disabled={busy || noTurns}
+            aria-describedby={webHelpId}
+          />
+          <label htmlFor={webId} className={styles.webLabel}>
+            公的な情報でも調べる
+            <span id={webHelpId} className={styles.webHelp}>
+              （中小企業庁・日本政策金融公庫など。30秒ほどかかります）
+            </span>
+          </label>
+        </div>
         <div className="button-row" style={{ alignItems: "flex-start" }}>
           <button type="submit" className="button" disabled={!canSend} aria-busy={sending}>
-            {sending ? `考えています…（${seconds}秒）` : "送信"}
+            {sending ? waitingText : "送信"}
           </button>
           <MicButton
             onText={handleVoiceText}
@@ -344,6 +371,7 @@ function MessageBubble({ message: m }: { message: AdvisorMessage }) {
               {m.consultNote && <span className={styles.consultNote}>{m.consultNote}</span>}
             </p>
           )}
+          <SourceList sources={m.sources} searched={m.searched} />
           {/* 言い切りに見える表現があったときの注記（文はサーバーの固定文。返事そのものは変えていない） */}
           {m.caution && (
             <p className={styles.caution} role="note">
@@ -353,6 +381,54 @@ function MessageBubble({ message: m }: { message: AdvisorMessage }) {
           <p className={styles.draftNote}>AI による下書きです。判断するのはあなたです。</p>
         </div>
       </div>
+    </div>
+  );
+}
+
+type Source = NonNullable<Extract<AdvisorMessage, { from: "ai" }>["sources"]>[number];
+
+/** 念のため、https で、許可した11件のドメインの URL だけをリンクにする（それ以外は表示しない。SEC-203） */
+function isHttpsUrl(url: unknown): url is string {
+  return isAllowedSourceUrl(url);
+}
+
+const SOURCE_LABEL: Record<Source["kind"], string> = {
+  public: "公的機関",
+  private: "民間サービスの解説（商品を勧めるものではありません）",
+};
+
+/** 出典の一覧。リンクにするのは sources の url だけ（本文の中の URL はリンクにしない） */
+function SourceList({ sources, searched }: { sources?: Source[]; searched?: boolean }) {
+  const list = (sources ?? []).filter((s) => s && isHttpsUrl(s.url));
+  if (list.length === 0) {
+    if (searched !== true) return null;
+    return (
+      <p className={styles.noSources} role="note">
+        公的な情報は見つかりませんでした
+      </p>
+    );
+  }
+  return (
+    <div className={styles.sources}>
+      <p className={styles.sourcesTitle}>出典</p>
+      <ul className={styles.sourceList} aria-label="出典">
+        {list.map((s, i) => {
+          const kind: Source["kind"] = s.kind === "public" ? "public" : "private";
+          return (
+            <li key={`${s.url}-${i}`} className={styles.sourceItem}>
+              <span
+                className={kind === "public" ? `${styles.sourceKind} ${styles.sourceKindPublic}` : styles.sourceKind}
+              >
+                {SOURCE_LABEL[kind]}
+              </span>
+              <a className={styles.sourceLink} href={s.url} target="_blank" rel="noopener noreferrer">
+                {s.title?.trim() || s.url}
+                <span className="visually-hidden">（新しいタブで開きます）</span>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

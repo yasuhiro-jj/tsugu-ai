@@ -118,7 +118,7 @@ export default function CourseClient({ course, initialLevel, initialStatus }: Pr
           記事
         </h2>
         {course.articles.map((a) => (
-          <div key={a.no} className={askStyles.row}>
+          <div key={a.no} className={askStyles.block}>
             <article
               id={`article-${a.no}`}
               tabIndex={-1}

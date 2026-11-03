@@ -100,14 +100,22 @@ export type Course = {
 };
 
 /**
- * 記事の横の「AIに質問する」の答え（POST /api/learning/ask  body: { courseId, articleNo, question } → { ok, answer: AskAnswer }  後継者のみ）。
+ * 記事の横の「AIに質問する」の答え（POST /api/learning/ask  body: { courseId, articleNo, question, mode?: "article" | "web" } → { ok, answer: AskAnswer }  後継者のみ）。
  * 会話は保存しない（1問1答）。terms は答えの中で使った言葉の短い説明（0〜3件）
  */
 export type AskAnswer = {
   text: string;
+  /** mode: "web" のときは空 */
   terms: { term: string; meaning: string }[];
   /** 答えに言い切りに見える表現があったときの固定の注記（lib/assertive.ts）。答えそのものは変えない */
   caution?: string;
+  /**
+   * 出典（mode: "web" のときだけ。検索で見つかった・答えに引用したページ。重複なし・最大8件）。
+   * kind は "public"＝公的機関、"private"＝民間サービス（ドメインから判定）。許可した11件のドメイン以外は入らない
+   */
+  sources?: { url: string; title: string; kind: "public" | "private" }[];
+  /** 検索が実行され、結果を受け取れたか（mode: "web" のときだけ。false なら記事と AI の知識だけの答え） */
+  searched?: boolean;
 };
 
 export type CourseProgressStatus ="未着手" | "学習中" | "完了" | "復習をおすすめ";

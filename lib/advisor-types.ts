@@ -15,6 +15,14 @@ export type AdvisorMessage =
       at: string;
       /** AI の返事に言い切りに見える表現があったときの固定の注記（lib/assertive.ts）。返事そのものは変えない */
       caution?: string;
+      /**
+       * 出典（web: true で送った相談への返事だけ。検索で見つかった・返事に引用したページ。重複なし・最大8件）。
+       * kind は "public"＝公的機関、"private"＝民間サービス（ドメインから判定）。許可した11件のドメイン以外は入らない。
+       * 次の相談で AI に渡す履歴には入れない（本文だけを渡す）
+       */
+      sources?: { url: string; title: string; kind: "public" | "private" }[];
+      /** web: true で送った相談への返事のとき、検索が実行され結果を受け取れたか（web でない返事には付かない） */
+      searched?: boolean;
     };
 
 export type AdvisorState = {

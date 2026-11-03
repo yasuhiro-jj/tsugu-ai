@@ -66,3 +66,33 @@ export async function reserveAiCall(
     );
   }
 }
+
+// ---- 検索つきの呼び出しだけの1日の上限（SEC-202） ----
+
+/** 検索つきの呼び出しの1日の上限の既定値（1回 約 $0.2 の目安でオーナーに報告済み） */
+export const WEB_SEARCH_DAILY_LIMIT_DEFAULT = 200;
+export const MSG_WEB_SEARCH_DAILY_LIMIT =
+  "本日の『公的な情報で調べる』の上限に達しました。日本時間の朝9時に戻ります。記事の内容だけで答える［質問する］は使えます";
+
+export function webSearchDailyLimit(): number {
+  const v = Number(process.env.AI_WEB_SEARCH_DAILY_LIMIT);
+  return Number.isInteger(v) && v > 0 ? v : WEB_SEARCH_DAILY_LIMIT_DEFAULT;
+}
+
+/**
+ * ai_usage_daily に入れる検索用の日のキー（"web:2026-11-03"）。日の区切りは usageDayKey と同じ（日本時間の朝9時）。
+ * ai_usage_daily と同じく、デモをやり直しても消さない（古い日付だけ lib/retention.ts が消す）
+ */
+export function webSearchDayKey(nowIsoString: string): string {
+  return `web:${usageDayKey(nowIsoString)}`;
+}
+
+/** 検索つきの呼び出しを1回分予約する。アプリ全体の1日の上限を超えたら 429 */
+export async function reserveWebSearchCall(db: Client): Promise<void> {
+  const rs = await db.execute({
+    sql: `INSERT INTO ai_usage_daily (day, calls) VALUES (?, 1)
+          ON CONFLICT(day) DO UPDATE SET calls = calls + 1 WHERE calls < ?`,
+    args: [webSearchDayKey(nowIso()), webSearchDailyLimit()],
+  });
+  if (rs.rowsAffected !== 1) throw new ServiceError(429, MSG_WEB_SEARCH_DAILY_LIMIT);
+}
