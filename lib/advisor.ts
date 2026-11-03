@@ -40,7 +40,8 @@ import {
 import type { Role } from "./role";
 import { ServiceError, MSG_CONFLICT } from "./errors";
 import { getDb } from "./db";
-import { financialsForPrompt, periodNames, upsideForPrompt } from "./financials";
+import { financialsForPrompt, periodNames, PL_CASH_SEPARATION_RULE, upsideForPrompt } from "./financials";
+import { allowedSet, financialAllowedNumbers, groundingFor, logGrounding, sanitizeGrounding } from "./grounding";
 import type { CompanySettings } from "./settings-types";
 import { TSUGUMI_SETTINGS } from "./industry-presets";
 import { loadCompanySettings, MSG_SETTINGS_CHANGED, settingsRevCondition } from "./company-settings";
@@ -62,6 +63,7 @@ import { charLen, fillTemplate, nowIso } from "./util";
 import { validateText } from "./validation";
 import { getLearningLevel } from "./learning";
 import { ASSERTIVE_CAUTION, cautionFor } from "./assertive";
+import { SEARCH_QUERY_NOTE } from "./ai/search-query";
 
 export const MSG_ADVISOR_TURN_LIMIT = `AI参謀と話せるのは${ADVISOR_MAX_TURNS}回までです。「会話を消す」で始めからやり直せます`;
 export const MSG_ADVISOR_EMPTY = "相談したいことを入力してください";
@@ -142,6 +144,10 @@ function parseStoredMessages(raw: unknown): AdvisorMessage[] {
         // 出典は許可したドメインの形の正しいものだけを戻す（kind は URL から判定し直す）
         ...(Array.isArray(m.sources) ? { sources: sanitizeSources(m.sources) } : {}),
         ...(typeof m.searched === "boolean" ? { searched: m.searched } : {}),
+        // 検索の言葉を伏せたときの文は、決まった文だけを戻す
+        ...(m.searchQueryNote === SEARCH_QUERY_NOTE ? { searchQueryNote: SEARCH_QUERY_NOTE } : {}),
+        // 根拠の照合は形の正しい文字列の配列だけを戻す
+        ...withGrounding(sanitizeGrounding(m.grounding)),
       });
     }
   }
@@ -177,6 +183,10 @@ async function loadChat(db: Client, demoId: string, role: Role): Promise<Stored>
     }
   }
   return { messages: parseStoredMessages(row.messages), rev: Number(row.rev) };
+}
+
+function withGrounding(g: ReturnType<typeof sanitizeGrounding>) {
+  return g ? { grounding: g } : {};
 }
 
 function turnsOf(messages: AdvisorMessage[]): number {
@@ -373,6 +383,8 @@ export function buildAdvisorRequest(params: {
   const upside = upsideForPrompt(settings);
   const extraNotes = [
     "診断は、先代と後継者の二人が共有した内容から作られたものです。診断が無いときは、数字だけで答えてください。",
+    // 損益と資金繰りを混ぜない（外部評価の指摘への対応 2026-11-03）
+    `${PL_CASH_SEPARATION_RULE}。`,
   ];
   if (upside) {
     extraNotes.push(
@@ -479,7 +491,9 @@ export async function sendAdvisorMessage(
       // 印を外せなくても、ADVISOR_PENDING_TTL_MS で無視されるようになる。元のエラーを返す
     }
   };
-  let out: AdvisorOutput & { sources?: AdvisorWebSources; searched?: boolean };
+  let out: AdvisorOutput & { sources?: AdvisorWebSources; searched?: boolean; searchQueryNote?: string };
+  // 根拠の照合で、数字の根拠に入れる出典の文（cited_text）。検索で出典があるのに引用の文が1つも取れなければ、数字の照合は対象外（null）
+  let citedTexts: string[] | null = [];
   try {
     if (web && webAi) {
       const now = deps.now ?? Date.now;
@@ -490,11 +504,19 @@ export async function sendAdvisorMessage(
         question: text,
         roleLabel: role === "predecessor" ? "先代" : "後継者",
         level,
+        settings: cfg.settings,
       });
       // 2段目：検索なしのふだんの呼び出し（残り時間で）。出典は1段目のものをそのまま付ける
       const req = buildAdvisorRequest({ ...base, publicInfo: research, budgetMs: secondStageBudget(startedAt, now) });
       const second = await callJsonAi(deps, demoId, role, req, parseAdvisorOutput);
-      out = { ...second, sources: publicSources(research.sources), searched: research.searched };
+      out = {
+        ...second,
+        sources: publicSources(research.sources),
+        searched: research.searched,
+        ...(research.searchQueryNote ? { searchQueryNote: research.searchQueryNote } : {}),
+      };
+      const cited = research.sources.map((x) => x.citedText ?? "").filter(Boolean);
+      citedTexts = research.sources.length > 0 && cited.length === 0 ? null : cited;
     } else {
       out = await callJsonAi(deps, demoId, role, buildAdvisorRequest(base), parseAdvisorOutput);
     }
@@ -505,6 +527,19 @@ export async function sendAdvisorMessage(
 
   // 言い切りに見える表現があれば固定の注記を足す（返事は変えない。ログは種類だけ。SEC-A02）
   const caution = cautionFor("advisor.message", [out.reply, ...out.points, out.consultNote]);
+  // 根拠の照合（lib/grounding.ts）：お店の数字・試算・診断・本人の発言（履歴と今回）・出典の文に無い数字
+  const grounding = groundingFor(
+    [out.reply, ...out.points, out.consultNote],
+    citedTexts === null
+      ? null
+      : allowedSet(
+          financialAllowedNumbers(cfg.settings.financials, cfg.settings),
+          diagnosis ? [JSON.stringify(diagnosis.diagnosis)] : [],
+          [text, ...chat.messages.filter((m) => m.from === "me").map((m) => m.text)],
+          citedTexts,
+        ),
+  );
+  logGrounding("advisor.message", grounding);
   const messages: AdvisorMessage[] = [
     ...chat.messages,
     { from: "me", text, at: myAt },
@@ -518,6 +553,8 @@ export async function sendAdvisorMessage(
       ...(caution ? { caution } : {}),
       ...(out.sources !== undefined ? { sources: out.sources } : {}),
       ...(out.searched !== undefined ? { searched: out.searched } : {}),
+      ...withGrounding(grounding),
+      ...(out.searchQueryNote ? { searchQueryNote: out.searchQueryNote } : {}),
     },
   ];
   if (!(await saveChat(deps.db, demoId, role, messages, reservedRev, diagnosis?.created_at ?? null, cfg.rev))) {

@@ -11,10 +11,12 @@ type Props = {
   savingKey: ThemeKey | null;
   disabled: boolean;
   onChangeShare: (key: ThemeKey, shared: boolean) => void;
+  /** 切り替えの直後に、そのテーマの下へ出す短い案内（共有を取り消して診断などが消えたとき） */
+  notice?: { key: ThemeKey; text: string } | null;
 };
 
 /** 確定済みテーマの要約と、共有する／しないの後からの切り替え */
-export default function MySummaries({ themes, partnerLabel, savingKey, disabled, onChangeShare }: Props) {
+export default function MySummaries({ themes, partnerLabel, savingKey, disabled, onChangeShare, notice }: Props) {
   const confirmed = themes.filter((t) => t.status === "confirmed" && t.summary);
   if (confirmed.length === 0) return null;
 
@@ -75,6 +77,11 @@ export default function MySummaries({ themes, partnerLabel, savingKey, disabled,
                   </span>
                 )}
               </div>
+              {notice?.key === t.key && (
+                <p className="muted" role="status">
+                  {notice.text}
+                </p>
+              )}
             </li>
           );
         })}

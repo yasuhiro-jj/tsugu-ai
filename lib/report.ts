@@ -46,10 +46,13 @@ import {
   getFinancialSummary,
   getUpsideSummary,
   periodNames,
+  PL_CASH_SEPARATION_RULE,
+  PRINCIPAL_REPAYMENT_NOTE,
   round1,
   upsideForPrompt,
   type FinancialsInput,
 } from "./financials";
+import { allowedSet, financialAllowedNumbers, groundingFor, logGrounding } from "./grounding";
 import type { CompanySettings } from "./settings-types";
 import { TSUGUMI_SETTINGS } from "./industry-presets";
 import { loadCompanySettings, MSG_SETTINGS_CHANGED, settingsRevCondition } from "./company-settings";
@@ -207,6 +210,17 @@ function table(fin: FinancialsInput, rows: ReportNumberRow[]): ReportNumberTable
   return { source: n.source, columns: { previous: n.previous, current: n.current }, rows };
 }
 
+/** 見出しつきのまとまりに分けた表（rows は groups の行を上から順につないだもの）。2026-11-03 損益と資金繰りを分ける */
+function groupedTable(
+  fin: FinancialsInput,
+  groups: { title: string; labels: string[] }[],
+  ch: Record<string, string>,
+  note?: string,
+): ReportNumberTable {
+  const g = groups.map((x) => ({ title: x.title, rows: pickRows(fin, x.labels, ch) }));
+  return { ...table(fin, g.flatMap((x) => x.rows)), groups: g, ...(note ? { note } : {}) };
+}
+
 /** 前期との差（金額は万円、比率はポイント） */
 function changes(fin: FinancialsInput) {
   const p = fin.previous;
@@ -235,28 +249,32 @@ function changes(fin: FinancialsInput) {
   } as Record<string, string>;
 }
 
-const RESULT_LABELS = ["売上高", "粗利", "営業利益", "経常利益", "当期純利益"];
-const FINANCIAL_LABELS = [
-  "手元資金（期末）",
-  "手元資金は月商の何か月分",
-  "借入残高（期末）",
-  "年間返済額（元本）",
-  "当期の現金の動き",
-  "原価率",
-  "人件費率",
-  "FL比率",
-  "営業利益率",
+// 表の見出し（2026-11-03：損益（もうけ）とお金の動き（資金繰り）を分ける）
+const PL_TITLE = "もうけ（損益）";
+const CASH_TITLE = "お金の動き（資金繰り）";
+const RATIO_TITLE = "もうけの比率（損益）";
+const DEBT_TITLE = "借入（元本の返済は営業利益に入らない）";
+
+const RESULT_GROUPS = [{ title: PL_TITLE, labels: ["売上高", "粗利", "営業利益", "経常利益", "当期純利益"] }];
+const FINANCIAL_GROUPS = [
+  {
+    title: CASH_TITLE,
+    labels: ["当期純利益", "減価償却費", "年間返済額（元本）", "当期の現金の動き", "手元資金（期末）", "手元資金は月商の何か月分"],
+  },
+  { title: DEBT_TITLE, labels: ["借入残高（期末）"] },
+  { title: RATIO_TITLE, labels: ["原価率", "人件費率", "FL比率", "営業利益率"] },
 ];
-const BANK_LABELS = [
-  "売上高",
-  "営業利益",
-  "経常利益",
-  "手元資金（期末）",
-  "手元資金は月商の何か月分",
-  "借入残高（期末）",
-  "年間返済額（元本）",
-  "当期の現金の動き",
+const BANK_GROUPS = [
+  { title: PL_TITLE, labels: ["売上高", "営業利益", "経常利益"] },
+  {
+    title: CASH_TITLE,
+    labels: ["年間返済額（元本）", "当期の現金の動き", "手元資金（期末）", "手元資金は月商の何か月分", "借入残高（期末）"],
+  },
 ];
+const labelsOf = (groups: { labels: string[] }[]) => groups.flatMap((g) => g.labels);
+const RESULT_LABELS = labelsOf(RESULT_GROUPS);
+const FINANCIAL_LABELS = labelsOf(FINANCIAL_GROUPS);
+const BANK_LABELS = labelsOf(BANK_GROUPS);
 
 /** 資料の AI の文をすべて並べる（言い切りの確認用） */
 export function reportAiTexts(ai: ReportAiParts): string[] {
@@ -281,7 +299,15 @@ function reportHasAssertive(ai: ReportAiParts): boolean {
 /** 保存済みの AI の文と、今の数字・90日計画から、画面にそのまま出せる形を組み立てる */
 export function buildReportState(
   ai: ReportAiParts,
-  meta: { createdAt: string; updatedAt: string; editedAt?: string; diagnosisCreatedAt: string; actions: PlanAction[] },
+  meta: {
+    createdAt: string;
+    updatedAt: string;
+    editedAt?: string;
+    diagnosisCreatedAt: string;
+    actions: PlanAction[];
+    /** 根拠の照合に使う文（作成時に AI に渡した公開用の診断・90日計画の文）。省略時はお店の数字・試算だけで照合する */
+    groundingTexts?: string[];
+  },
   /** 会社の設定（省略時はつぐみの初期値）。会社名・業種・概要・決算の数字・伸びる余地を出すか */
   settings: CompanySettings = TSUGUMI_SETTINGS,
 ): ReportState {
@@ -310,6 +336,11 @@ export function buildReportState(
 
   // 言い切りに見える表現の確認（SEC-302）。表示のたびに保存済みの AI の文から決める（ログは作成時だけ）
   const caution = reportHasAssertive(ai) ? ASSERTIVE_CAUTION : undefined;
+  // 根拠の照合（lib/grounding.ts）：AI の文の数字が、お店の数字・試算・診断・90日計画にあるか。表示のたびに今の文から作る
+  const grounding = groundingFor(
+    reportAiTexts(ai),
+    allowedSet(financialAllowedNumbers(fin, settings), meta.groundingTexts ?? [], meta.actions.map((a) => a.title)),
+  );
 
   return {
     isDraft: true,
@@ -321,6 +352,7 @@ export function buildReportState(
     ...(meta.editedAt ? { editedAt: meta.editedAt } : {}),
     // 編集欄の初期値（表示用の欄と同じ配列を共有しないよう複製する）
     editable: structuredClone(ai),
+    ...(grounding ? { grounding } : {}),
     summary: {
       title: "決算サマリー（下書き）",
       basic: {
@@ -334,12 +366,18 @@ export function buildReportState(
         createdDate,
         sources,
       },
-      results: { no: 2, title: "決算の要点", by: "app+ai", table: table(fin, pick(RESULT_LABELS)), comment: ai.results_comment },
+      results: {
+        no: 2,
+        title: "決算の要点",
+        by: "app+ai",
+        table: groupedTable(fin, RESULT_GROUPS, ch),
+        comment: ai.results_comment,
+      },
       financial: {
         no: 3,
         title: "財務の状態",
         by: "app+ai",
-        table: table(fin, pick(FINANCIAL_LABELS)),
+        table: groupedTable(fin, FINANCIAL_GROUPS, ch, PRINCIPAL_REPAYMENT_NOTE),
         comment: ai.financial_comment,
       },
       strengthsAndIssues: {
@@ -433,7 +471,7 @@ export function buildReportState(
       createdDate,
       companyName,
       purpose: ai.bank_doc.purpose,
-      numbers: table(fin, pick(BANK_LABELS)),
+      numbers: groupedTable(fin, BANK_GROUPS, ch, PRINCIPAL_REPAYMENT_NOTE),
       questions: ai.bank_doc.questions,
       note: "融資の可否や条件は銀行が判断します。この資料は相談のための下書きで、結果を約束するものではありません。",
     },
@@ -470,7 +508,8 @@ export function buildReportRequest(
     dataBlock("action_plan", plan),
   ].join("\n\n");
   // 初期値（つぐみ）以外で、指示文の前提と違うところだけ補足する（指示文の本文は変えない）
-  const notes: string[] = [];
+  // 損益と資金繰りを混ぜない（外部評価の指摘への対応 2026-11-03。つぐみの初期値でも足す）
+  const notes: string[] = [`- ${PL_CASH_SEPARATION_RULE}。`];
   if (periodNames(settings.financials).userInput) {
     notes.push("- 数字は利用者が設定に入力したもの。期の名前は「前期」「当期」とだけ書き、決算期の年月（2025年3月期など）は書かない。");
   }
@@ -539,6 +578,8 @@ export async function getReportFrom(db: Client, demoId: string): Promise<ReportS
     const plan = await getActionPlanFrom(db, demoId);
     // 設定を変えると資料は消える（lib/company-settings.ts）ので、残っている資料は今の設定で作ったもの
     const { settings } = await loadCompanySettings(db, demoId);
+    // 根拠の照合に使う文：作成時に AI に渡したのと同じ公開用の診断（今の診断＝作成時の診断）
+    const groundingTexts = [JSON.stringify(toPublicDiagnosisRecord(diag).diagnosis)];
     return buildReportState(
       loaded.ai,
       {
@@ -547,6 +588,7 @@ export async function getReportFrom(db: Client, demoId: string): Promise<ReportS
         editedAt: loaded.editedAt,
         diagnosisCreatedAt: loaded.diagnosisCreatedAt,
         actions: plan.actions,
+        groundingTexts,
       },
       settings,
     );
@@ -605,6 +647,7 @@ export async function createReport(deps: AiDeps, demoId: string, role: Role): Pr
   // 書いたあとにも照合する（共有の取り消しで診断が無効になっていれば、ここで消えて null）
   const saved = await getReportFrom(deps.db, demoId);
   if (!saved) throw new ServiceError(409, MSG_REPORT_CHANGED);
+  logGrounding("report.create", saved.grounding);
   return saved;
 }
 
@@ -756,6 +799,7 @@ export async function updateReport(db: Client, demoId: string, body: Record<stri
   cautionFor("report.edit", reportAiTexts(ai));
   const saved = await getReportFrom(db, demoId);
   if (!saved) throw new ServiceError(409, MSG_REPORT_CHANGED);
+  logGrounding("report.edit", saved.grounding);
   return saved;
 }
 

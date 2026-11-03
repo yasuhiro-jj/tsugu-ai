@@ -7,6 +7,7 @@ import { postJson } from "@/components/post-json";
 import { useElapsedSeconds } from "@/components/use-elapsed";
 import MicButton from "@/components/voice/MicButton";
 import { appendWithinLimit, voiceLimitNotice } from "@/components/voice/append";
+import GroundingNote from "@/components/diagnosis/GroundingNote";
 import styles from "./advisor.module.css";
 
 /** 文字数の数え方：前後の空白を除き、絵文字なども1文字（面談の入力欄と同じ） */
@@ -264,7 +265,7 @@ export default function AdvisorClient({ initialState, suggestions }: Props) {
           <label htmlFor={webId} className={styles.webLabel}>
             公的な情報でも調べる
             <span id={webHelpId} className={styles.webHelp}>
-              （中小企業庁・日本政策金融公庫など。30秒ほどかかります）
+              （中小企業庁・日本政策金融公庫など。1分ほどかかります。会社名や人の名前はなるべく書かないでください）
             </span>
           </label>
         </div>
@@ -371,6 +372,7 @@ function MessageBubble({ message: m }: { message: AdvisorMessage }) {
               {m.consultNote && <span className={styles.consultNote}>{m.consultNote}</span>}
             </p>
           )}
+          {m.searchQueryNote && <p className={styles.caution}>{m.searchQueryNote}</p>}
           <SourceList sources={m.sources} searched={m.searched} />
           {/* 言い切りに見える表現があったときの注記（文はサーバーの固定文。返事そのものは変えていない） */}
           {m.caution && (
@@ -378,6 +380,8 @@ function MessageBubble({ message: m }: { message: AdvisorMessage }) {
               {m.caution}
             </p>
           )}
+          {/* 決算の数字・共有済みの要約で根拠を確かめられなかった数字・発言（サーバーの照合結果） */}
+          <GroundingNote grounding={m.grounding} />
           <p className={styles.draftNote}>AI による下書きです。判断するのはあなたです。</p>
         </div>
       </div>

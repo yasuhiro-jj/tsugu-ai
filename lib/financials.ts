@@ -2,7 +2,7 @@
 // 比率・得点などの計算はすべてここでルールベースで行い、AI には計算済みの文字列だけを渡す。
 // 秘密情報・実在の財務データは含まない（画面・サーバーどちらから import してもよい）。
 
-import type { FinancialSummary, UpsideItem, UpsideSummary } from "./plan-types";
+import type { FinancialFormulaTerm, FinancialGroup, FinancialRow, FinancialSummary, UpsideItem, UpsideSummary } from "./plan-types";
 import type { PeriodInput } from "./settings-types";
 
 export const FINANCIAL_SOURCE = "決算書（架空）2025年3月期・2026年3月期";
@@ -150,16 +150,95 @@ function repaymentNote(p: PeriodInput, c: PeriodInput): string {
   return p.principalRepayment === c.principalRepayment ? text : `当期は${text}`;
 }
 
+// ---- 損益（もうけ）とお金の動き（資金繰り）を分ける（外部評価の指摘への対応 2026-11-03） ----
+
+/** 元本の返済の注記（画面・資料・AI への入力で同じ文を使う） */
+export const PRINCIPAL_REPAYMENT_NOTE = "元本の返済は費用ではないので営業利益には入りません。ただし手元のお金は減ります";
+
+/** 診断・資料・AI参謀の指示文（アプリ側の補足）に足す一文 */
+export const PL_CASH_SEPARATION_RULE =
+  "営業赤字と元本の返済を足し合わせて1つの損失や赤字のように書かない。損益（もうけ）と資金繰り（お金の動き）は分けて書く";
+
+export const PROFIT_AND_LOSS_TITLE = "もうけ（損益）";
+export const CASH_MOVEMENT_TITLE = "お金の動き（資金繰り）";
+export const CASH_FLOW_FORMULA = "当期純利益 ＋ 減価償却費 − 元本の返済 ＝ 現金の増減";
+
+/** 今までの行（rows）のうち、もうけ（損益）に入る行。ほかの行はお金の動き（資金繰り）に入る（AI への入力の分け方） */
+const PL_ROW_LABELS: ReadonlySet<string> = new Set([
+  "売上高",
+  "売上原価",
+  "粗利",
+  "人件費",
+  "その他の販管費",
+  "営業利益",
+  "支払利息",
+  "経常利益",
+  "当期純利益",
+  "原価率",
+  "人件費率",
+  "FL比率",
+  "営業利益率",
+]);
+
+function row(label: string, prev: string, cur: string, note?: string): FinancialRow {
+  return note ? { label, previous: prev, current: cur, note } : { label, previous: prev, current: cur };
+}
+
+/** 符号つきの項の表記（「▲272万円」「＋ 120万円」「− 240万円」）。引く項はマイナスの値を括弧で囲む */
+function termText(t: FinancialFormulaTerm): string {
+  if (t.op === "start") return t.value;
+  const v = t.value.startsWith("▲") && t.op !== "=" ? `（${t.value}）` : t.value;
+  return `${t.op === "+" ? "＋" : t.op === "−" ? "−" : "＝"} ${v}`;
+}
+
+function profitAndLossGroup(p: PeriodInput, c: PeriodInput, pc: Computed, cc: Computed): FinancialGroup {
+  return {
+    title: PROFIT_AND_LOSS_TITLE,
+    rows: [
+      row("売上高", formatMan(p.sales), formatMan(c.sales)),
+      row("粗利", formatMan(pc.grossProfit), formatMan(cc.grossProfit), "売上高 − 売上原価"),
+      row("営業利益", formatMan(pc.operatingProfit), formatMan(cc.operatingProfit), "本業のもうけ（粗利 − 人件費 − その他の販管費）。元本の返済は入らない"),
+      row("経常利益", formatMan(pc.ordinaryProfit), formatMan(cc.ordinaryProfit), "営業利益 − 支払利息"),
+      row("当期純利益", formatMan(p.netIncome), formatMan(c.netIncome)),
+    ],
+  };
+}
+
+function cashMovementGroup(p: PeriodInput, c: PeriodInput, pc: Computed, cc: Computed): FinancialSummary["cashMovement"] {
+  const breakdown: FinancialFormulaTerm[] = [
+    { label: "当期純利益", op: "start", value: formatMan(c.netIncome) },
+    { label: "減価償却費", op: "+", value: formatMan(c.depreciation) },
+    { label: "元本の返済", op: "−", value: formatMan(c.principalRepayment) },
+    { label: "現金の増減", op: "=", value: formatMan(cc.cashFlow) },
+  ];
+  return {
+    title: CASH_MOVEMENT_TITLE,
+    rows: [
+      row("当期純利益", formatMan(p.netIncome), formatMan(c.netIncome), "出発点（もうけの最後の数字）"),
+      row("減価償却費", formatMan(p.depreciation), formatMan(c.depreciation), "足す（費用だが、お金は出ていかない）"),
+      row("元本の返済", formatMan(p.principalRepayment), formatMan(c.principalRepayment), `引く（費用ではないが、お金は出ていく。${repaymentNote(p, c)}）`),
+      row("現金の増減", formatMan(pc.cashFlow), formatMan(cc.cashFlow), CASH_FLOW_FORMULA.replace(" ＝ 現金の増減", "")),
+      row("手元資金（期末）", formatMan(p.cash), formatMan(c.cash), `前期末 ${formatMan(p.cash)} → 当期末 ${formatMan(c.cash)}`),
+      row("手元資金は月商の何か月分", formatMonths(pc.cashMonths), formatMonths(cc.cashMonths), "手元資金 ÷（売上高 ÷ 12）"),
+    ],
+    formula: CASH_FLOW_FORMULA,
+    breakdown,
+    breakdownText: breakdown.map(termText).join(" "),
+    cashChangeText: `手元資金 ${formatMan(p.cash)} → ${formatMan(c.cash)}（${formatManSigned(c.cash - p.cash)}）`,
+  };
+}
+
 /** 比較画面・資料の数字の表。f は設定の数字（初期値はつぐみ） */
 export function getFinancialSummary(f: FinancialsInput = TSUGUMI_FINANCIALS): FinancialSummary {
   const p = f.previous;
   const c = f.current;
   const pc = computePeriod(p);
   const cc = computePeriod(c);
-  const row = (label: string, prev: string, cur: string, note?: string) =>
-    note ? { label, previous: prev, current: cur, note } : { label, previous: prev, current: cur };
   return {
     source: periodNames(f).source,
+    profitAndLoss: profitAndLossGroup(p, c, pc, cc),
+    cashMovement: cashMovementGroup(p, c, pc, cc),
+    principalNote: PRINCIPAL_REPAYMENT_NOTE,
     rows: [
       row("売上高", formatMan(p.sales), formatMan(c.sales)),
       row("売上原価", formatMan(p.cogs), formatMan(c.cogs), "材料費など"),
@@ -310,7 +389,10 @@ export function upsideForPrompt(s: UpsideInput = TSUGUMI_UPSIDE_INPUT): string |
   return lines.join("\n");
 }
 
-/** AI に渡す文字列（計算済み。資料名と対象期間つき）。 */
+/**
+ * AI に渡す文字列（計算済み。資料名と対象期間つき）。
+ * 「もうけ（損益）」と「お金の動き（資金繰り）」の2つのまとまりに分けて渡す（2026-11-03。元本の返済を損失と混ぜさせないため）
+ */
 export function financialsForPrompt(f: FinancialsInput = TSUGUMI_FINANCIALS): string {
   const s = getFinancialSummary(f);
   const lines = [
@@ -318,8 +400,15 @@ export function financialsForPrompt(f: FinancialsInput = TSUGUMI_FINANCIALS): st
       ? `資料：${s.source}（単位：万円。前期・当期の2期分。決算期の年月は入力されていない）`
       : `資料：${s.source}（単位：万円。前期＝2025年3月期、当期＝2026年3月期）`,
   ];
-  for (const r of s.rows) {
-    lines.push(`- ${r.label}：前期 ${r.previous}／当期 ${r.current}${r.note ? `（${r.note}）` : ""}`);
-  }
+  const line = (r: FinancialRow) =>
+    `- ${r.label}：前期 ${r.previous}／当期 ${r.current}${r.note ? `（${r.note}）` : ""}`;
+  lines.push(`## ${PROFIT_AND_LOSS_TITLE}`);
+  for (const r of s.rows) if (PL_ROW_LABELS.has(r.label)) lines.push(line(r));
+  lines.push(`## ${CASH_MOVEMENT_TITLE}`);
+  for (const r of s.rows) if (!PL_ROW_LABELS.has(r.label)) lines.push(line(r));
+  lines.push(`- 計算式：${s.cashMovement.formula}`);
+  lines.push(`- 当期の内訳：${s.cashMovement.breakdownText}`);
+  lines.push(`- ${s.cashMovement.cashChangeText}`);
+  lines.push(`注記：${s.principalNote}`);
   return lines.join("\n");
 }

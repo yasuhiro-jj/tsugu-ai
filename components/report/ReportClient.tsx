@@ -14,6 +14,7 @@ import {
   type FieldErrors,
   type ReportDraft,
 } from "./report-edit";
+import GroundingNote from "@/components/diagnosis/GroundingNote";
 import styles from "./report.module.css";
 
 // 決算サマリー・相談用資料の操作（作る／作り直す／編集する／印刷）。
@@ -255,6 +256,8 @@ export default function ReportClient({ initialReport }: Props) {
           ※{report.caution}
         </p>
       )}
+      {/* 根拠を確認できない数字・発言の注記も、言い切りの注記と同じく印刷に残す */}
+      <GroundingNote grounding={report.grounding} />
 
       <section className="card" aria-labelledby="report-meta-title">
         <h2 id="report-meta-title" ref={titleRef} tabIndex={-1} className={styles.metaTitle}>

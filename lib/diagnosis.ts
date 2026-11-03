@@ -11,12 +11,13 @@ import "server-only";
 // - 共有を取り消したテーマを使った診断は返さない（based_on と今の共有状態を照合し、古ければ消して null）
 
 import type { Client } from "@libsql/client";
-import type { Diagnosis, DiagnosisDirections, DiagnosisRecord, DirectionItem, Expert, Importance } from "./plan-types";
+import type { Diagnosis, DiagnosisDirections, DiagnosisRecord, DirectionItem, Expert, Grounding, Importance } from "./plan-types";
 import type { ComparisonRow, ThemeSummary } from "./interview-types";
 import { THEMES, isThemeKey, type ThemeKey } from "./themes";
 import { ServiceError } from "./errors";
 import { getComparisonFrom } from "./compare";
-import { financialsForPrompt } from "./financials";
+import { financialsForPrompt, PL_CASH_SEPARATION_RULE, type FinancialsInput } from "./financials";
+import { allowedSet, financialAllowedNumbers, findUnsupportedQuotes, groundingFor, logGrounding } from "./grounding";
 import { getDb } from "./db";
 import { DIAGNOSIS_SYSTEM_TEMPLATE, fillPlanTemplate, tagRef } from "./prompts/plan";
 import { arr, callJsonAi, dataBlock, DATA_NOTE, obj, str, type AiDeps, type JsonAiRequest } from "./ai/json-ai";
@@ -137,6 +138,8 @@ export function buildDiagnosisRequest(allRows: ComparisonRow[], settings: Compan
     DATA_NOTE,
     // アプリからの補足：二人が最初に話し合うべき点が埋もれないよう「高」を絞る
     "# アプリからの補足\n- 重要度「高」は、お金・返済のように放置すると店の継続に直接響く、最も重要な1〜2件に絞る。それ以外の食い違いは「中」または「低」にする。",
+    // アプリからの補足：損益と資金繰りを混ぜない（外部評価の指摘への対応 2026-11-03）
+    `# アプリからの補足（数字の書き方）\n- ${PL_CASH_SEPARATION_RULE}。`,
     // アプリからの補足：承継の方向性（Notion ロードマップ 2026-11-03 追記「伝統を受け継ぎ、自分らしい挑戦も続けられる承継へ」）
     [
       "# アプリからの補足（方向性 directions）",
@@ -300,7 +303,8 @@ export async function getDiagnosisFrom(db: Client, demoId: string): Promise<Diag
   } catch {
     diagnosis = null;
   }
-  const now = sharedKeys(await getComparisonFrom(db, demoId));
+  const comparison = await getComparisonFrom(db, demoId);
+  const now = sharedKeys(comparison);
   const stillShared =
     basedOn !== null &&
     basedOn.predecessor.every((k) => now.predecessor.includes(k)) &&
@@ -314,7 +318,52 @@ export async function getDiagnosisFrom(db: Client, demoId: string): Promise<Diag
     }
     return null;
   }
-  return { diagnosis, createdAt: String(row.created_at), basedOnThemeKeys: unionKeys(basedOn) };
+  // 根拠の照合は読み出しのたびに今の共有済み要約と設定の数字で行う（設定を変えると診断は消えるので、今の設定で作った診断）
+  const { settings } = await loadCompanySettings(db, demoId);
+  const grounding = groundDiagnosis(diagnosis, bothSharedRows(comparison), settings.financials);
+  return {
+    diagnosis,
+    createdAt: String(row.created_at),
+    basedOnThemeKeys: unionKeys(basedOn),
+    ...(grounding ? { grounding } : {}),
+  };
+}
+
+// ---- 根拠の照合（lib/grounding.ts） ----
+
+/** 共有済み要約のうち AI に渡した部分（本人が話したこと・これから確認したいこと）の文 */
+function summaryTexts(s: ThemeSummary | null): string[] {
+  return s ? [...s.statements, ...s.unconfirmed] : [];
+}
+
+/** 診断の文をすべて並べる（数字の照合用） */
+export function diagnosisTexts(d: Diagnosis): string[] {
+  return [
+    ...d.common.flatMap((c) => [c.point, c.evidence]),
+    ...d.gaps.flatMap((g) => [g.point, g.senior_said, g.successor_said, g.numbers]),
+    ...d.to_confirm.flatMap((t) => [t.item, t.how]),
+    ...d.talk_questions,
+    ...[...d.directions.keep, ...d.directions.improve, ...d.directions.tryNew].map((x) => x.text),
+  ];
+}
+
+/**
+ * 診断の根拠の照合。rows は診断の材料（二人とも共有したテーマ。bothSharedRows の結果）。
+ * - 数字：お店の数字（計算済み）と、共有済み要約の本文に無いもの
+ * - 発言：senior_said は先代の、successor_said は後継者の共有済み要約と、共通点の evidence は両方の要約と照合する
+ */
+export function groundDiagnosis(d: Diagnosis, rows: ComparisonRow[], financials: FinancialsInput): Grounding | undefined {
+  const senior = rows.flatMap((r) => summaryTexts(r.predecessor));
+  const successor = rows.flatMap((r) => summaryTexts(r.successor));
+  const allowed = allowedSet(financialAllowedNumbers(financials), senior, successor);
+  const quotes = findUnsupportedQuotes([
+    ...d.gaps.flatMap((g) => [
+      { quote: g.senior_said, sources: senior },
+      { quote: g.successor_said, sources: successor },
+    ]),
+    ...d.common.map((c) => ({ quote: c.evidence, sources: [...senior, ...successor] })),
+  ]);
+  return groundingFor(diagnosisTexts(d), allowed, quotes);
 }
 
 /** 診断を作り直す（最新1件だけ保存）。 */
@@ -340,6 +389,8 @@ export async function runDiagnosis(deps: AiDeps, demoId: string, role: Role): Pr
   // AI を待っている間に共有が取り消されていたら、ここで消える
   const saved = await getDiagnosisFrom(deps.db, demoId);
   if (!saved) throw new ServiceError(409, "共有の状態が変わりました。もう一度診断してください");
+  // 根拠を確認できない数字・発言があれば、種類と件数だけをログに出す（本文は出さない）
+  logGrounding("diagnosis.run", saved.grounding);
   return saved;
 }
 
@@ -357,5 +408,11 @@ export async function getDiagnosis(demoId: string): Promise<DiagnosisRecord | nu
  * diagnosis（directions を含む）は parseDiagnosis で決まった項目だけに組み直したもの。directions の項目は text と from だけで、テーマの key は持たない。
  */
 export function toPublicDiagnosisRecord(rec: DiagnosisRecord): DiagnosisRecord {
-  return { diagnosis: rec.diagnosis, createdAt: rec.createdAt, basedOnThemeKeys: [] };
+  // grounding（根拠の照合）は診断の文から作ったものだけなので、公開用にも残す
+  return {
+    diagnosis: rec.diagnosis,
+    createdAt: rec.createdAt,
+    basedOnThemeKeys: [],
+    ...(rec.grounding ? { grounding: rec.grounding } : {}),
+  };
 }

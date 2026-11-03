@@ -21,6 +21,7 @@ import type {
   ChatMessage,
   InterviewState,
   MyTheme,
+  RevokeImpact,
   ThemeSummary,
 } from "../interview-types";
 import type { Role } from "../role";
@@ -104,10 +105,58 @@ function currentThemeOf(records: Map<ThemeKey, ThemeRecord>): ThemeKey | null {
   return null;
 }
 
+/** 何も消えないときの revokeImpact */
+export const NO_REVOKE_IMPACT: RevokeImpact = {
+  diagnosis: false,
+  learningPlanWithDiagnosis: false,
+  actionPlan: false,
+  report: false,
+  myAdvisorChat: false,
+};
+
+/**
+ * 共有を取り消すと消えるもの（invalidateDiagnosisStatements と同じ範囲）のうち、今このデモ用 ID にあるもの。
+ * すべて demo_id で絞る。AI参謀の会話は本人の役割の分だけ（相手の会話の有無は返さない）。
+ * 学習プランは今のプラン（current_plan）が診断を使ったものかだけを見る
+ */
+export async function getRevokeImpact(db: Client, demoId: string, role: Role): Promise<RevokeImpact> {
+  const rs = await db.execute({
+    sql: `SELECT
+            EXISTS (SELECT 1 FROM diagnoses WHERE demo_id = ?) AS diagnosis,
+            EXISTS (SELECT 1 FROM learning WHERE demo_id = ? AND current_plan IS NOT NULL
+                      AND json_valid(current_plan) AND json_extract(current_plan, '$.usedDiagnosis') = 1) AS learning_plan,
+            EXISTS (SELECT 1 FROM action_plans WHERE demo_id = ?) AS action_plan,
+            EXISTS (SELECT 1 FROM reports WHERE demo_id = ?) AS report,
+            EXISTS (SELECT 1 FROM advisor_chats WHERE demo_id = ? AND role = ? AND diagnosis_created_at IS NOT NULL) AS my_chat`,
+    args: [demoId, demoId, demoId, demoId, demoId, role],
+  });
+  const r = rs.rows[0];
+  if (!r) return { ...NO_REVOKE_IMPACT };
+  return {
+    diagnosis: Number(r.diagnosis) === 1,
+    learningPlanWithDiagnosis: Number(r.learning_plan) === 1,
+    actionPlan: Number(r.action_plan) === 1,
+    report: Number(r.report) === 1,
+    myAdvisorChat: Number(r.my_chat) === 1,
+  };
+}
+
+/** toState に revokeImpact を DB から読んで付ける */
+async function stateFor(
+  db: Client,
+  demoId: string,
+  role: Role,
+  records: Map<ThemeKey, ThemeRecord>,
+  settings: CompanySettings,
+): Promise<InterviewState> {
+  return toState(role, records, settings, await getRevokeImpact(db, demoId, role));
+}
+
 export function toState(
   role: Role,
   records: Map<ThemeKey, ThemeRecord>,
   settings: CompanySettings = TSUGUMI_SETTINGS,
+  revokeImpact: RevokeImpact = NO_REVOKE_IMPACT,
 ): InterviewState {
   const profile = DEMO_PROFILES[role];
   const themes: MyTheme[] = THEMES.map((t) => {
@@ -141,6 +190,7 @@ export function toState(
       label: t.label,
       messages: records.get(t.key)!.messages,
     })),
+    revokeImpact: { ...revokeImpact },
   };
 }
 
@@ -149,7 +199,7 @@ export async function getInterviewState(
   demoId: string,
   role: Role,
 ): Promise<InterviewState> {
-  return toState(role, await loadRecords(db, demoId, role), await getCompanySettingsFrom(db, demoId));
+  return stateFor(db, demoId, role, await loadRecords(db, demoId, role), await getCompanySettingsFrom(db, demoId));
 }
 
 // ---- Claude に渡す内容の組み立て ----
@@ -274,9 +324,9 @@ export async function startInterview(deps: Deps, demoId: string, role: Role): Pr
   const startedAt = (deps.now ?? Date.now)();
   const { records, settings } = await loadForWrite(deps.db, demoId, role);
   const themeKey = currentThemeOf(records);
-  if (themeKey === null) return toState(role, records, settings);
+  if (themeKey === null) return stateFor(deps.db, demoId, role, records, settings);
   const rec = records.get(themeKey)!;
-  if (rec.messages.length > 0 || rec.status !== "not_started") return toState(role, records, settings);
+  if (rec.messages.length > 0 || rec.status !== "not_started") return stateFor(deps.db, demoId, role, records, settings);
 
   const out = await callAi(deps, demoId, role, buildInterviewRequest({ role, records, themeKey, settings }), startedAt);
   const updated: ThemeRecord = {
@@ -287,7 +337,7 @@ export async function startInterview(deps: Deps, demoId: string, role: Role): Pr
   await saveRecord(deps.db, demoId, role, updated, rec.rev);
   await setCurrentTheme(deps.db, demoId, role, themeKey);
   records.set(themeKey, { ...updated, rev: rec.rev + 1 });
-  return toState(role, records, settings);
+  return stateFor(deps.db, demoId, role, records, settings);
 }
 
 /** 本人のメッセージを送り、AI の返事を保存する。AI が失敗したら入力文は保存しない。 */
@@ -351,7 +401,7 @@ export async function sendMessage(
   }
   await saveRecord(deps.db, demoId, role, updated, rec.rev);
   records.set(themeKey, { ...updated, rev: rec.rev + 1 });
-  return toState(role, records, settings);
+  return stateFor(deps.db, demoId, role, records, settings);
 }
 
 /** 要約の確定／破棄。確定・破棄したら次の未着手テーマへ移る。 */
@@ -387,7 +437,7 @@ export async function decideSummary(
   await saveRecord(db, demoId, role, updated, rec.rev);
   records.set(themeKey, { ...updated, rev: rec.rev + 1 });
   await setCurrentTheme(db, demoId, role, currentThemeOf(records));
-  return toState(role, records, settings);
+  return stateFor(db, demoId, role, records, settings);
 }
 
 /** 共有の選択（confirmed のテーマだけ。何度でも変更可） */
@@ -416,7 +466,7 @@ export async function setShared(
     throw new ServiceError(409, MSG_CONFLICT);
   }
   records.set(themeKey, { ...updated, rev: rec.rev + 1 });
-  return toState(role, records, settings);
+  return stateFor(db, demoId, role, records, settings);
 }
 
 /** このデモ用 ID のデータを全部消して、今の役割の初期状態を返す。 */

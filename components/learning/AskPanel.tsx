@@ -8,6 +8,7 @@ import { useElapsedSeconds } from "@/components/use-elapsed";
 import { askExamples } from "./ask-examples";
 import MicButton from "@/components/voice/MicButton";
 import { appendWithinLimit, voiceLimitNotice } from "@/components/voice/append";
+import GroundingNote, { pickGrounding } from "@/components/diagnosis/GroundingNote";
 import styles from "./AskPanel.module.css";
 
 // 記事の下（幅いっぱい）の「この記事についてAIに質問する」欄。後継者のみ（使えるかどうかの最終判断はサーバー）。
@@ -67,6 +68,10 @@ function pickAnswer(d: Record<string, unknown>): AskAnswer | undefined {
   const src = pickSources(sources);
   if (src) out.sources = src;
   if (typeof searched === "boolean") out.searched = searched;
+  const note = (a as Record<string, unknown>).searchQueryNote;
+  if (typeof note === "string" && note.trim() !== "") out.searchQueryNote = note;
+  const g = pickGrounding((a as Record<string, unknown>).grounding);
+  if (g) out.grounding = g;
   return out;
 }
 
@@ -308,7 +313,7 @@ export default function AskPanel({ courseId, articleNo, articleTitle }: Props) {
           </div>
         </div>
         <p id={`${baseId}-webhelp`} className={styles.help}>
-          ［質問する］は記事の内容だけで答えます。［公的な情報で調べる］は国や公的機関などのページも調べて答えます（30秒ほどかかることがあります）。
+          ［質問する］は記事の内容だけで答えます。［公的な情報で調べる］は国や公的機関などのページも調べて答えます（1分ほどかかることがあります）。検索には会社名・人の名前・金額を伏せて使いますが、会社名や人の名前はなるべく書かないでください。
         </p>
       </form>
 
@@ -386,6 +391,7 @@ function AnswerCard({ item }: { item: Exchange }) {
     <div className={styles.answer}>
       <p className={styles.who}>{mode === "web" ? "AI の答え（公的な情報も調べました）" : "AI の答え（記事から）"}</p>
       <p className={styles.answerText}>{answer.text}</p>
+      {mode === "web" && answer.searchQueryNote && <p className={styles.note}>{answer.searchQueryNote}</p>}
 
       {answer.terms.length > 0 && (
         <div className={styles.termsBox}>
@@ -406,6 +412,8 @@ function AnswerCard({ item }: { item: Exchange }) {
           {answer.caution}
         </p>
       )}
+      {/* 記事で根拠を確かめられなかった数字・発言（サーバーの照合結果） */}
+      <GroundingNote grounding={answer.grounding} />
 
       {mode === "web" &&
         (noPublic ? (

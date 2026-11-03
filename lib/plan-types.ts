@@ -49,12 +49,60 @@ export type DiagnosisRecord = {
   createdAt: string; // ISO
   /** 診断に使った共有済みテーマの key（画面には件数・名前として出さない。再診断の要否判定用） */
   basedOnThemeKeys: string[];
+  /**
+   * 根拠の照合（lib/grounding.ts。2026-11-03 追加）。見つかったときだけ付く（無ければ項目ごと無い）。
+   * 公開用の変換（toPublicDiagnosisRecord）のあとも残る。画面は groundingNotice(grounding) の文を出す
+   */
+  grounding?: Grounding;
 };
 
+/**
+ * AI の文の根拠の照合結果（lib/grounding.ts。外部評価の指摘への対応 2026-11-03）。
+ * - ungroundedNumbers：根拠（アプリの計算値・共有済み要約・出典の文など）に無い数字（AI の文に書かれていた形のまま。重複なし）
+ * - unsupportedQuotes：診断の「先代／後継者が話したこと」「共通点の根拠」のうち、その人の共有済み要約と十分に重ならない文
+ * どちらも「誤りの疑い」で、誤りと決まったわけではない。AI の文そのものは変えない
+ */
+export type Grounding = { ungroundedNumbers: string[]; unsupportedQuotes: string[] };
+
 // ---- お店の数字（ルールベースで計算済み。AI に計算させない） ----
+/** 数字の表の1行（表示用の文字列） */
+export type FinancialRow = { label: string; previous: string; current: string; note?: string };
+
+/** 表示用のまとまり（見出しつきの行の並び） */
+export type FinancialGroup = { title: string; rows: FinancialRow[] };
+
+/** 計算式の内訳の1項目（例：{ label: "減価償却費", op: "+", value: "120万円" }） */
+export type FinancialFormulaTerm = {
+  label: string;
+  /** "start"＝出発点、"+"＝足す、"−"＝引く、"="＝結果 */
+  op: "start" | "+" | "−" | "=";
+  value: string;
+};
+
 export type FinancialSummary = {
   source: string; // 例：「決算書（架空）2025年3月期・2026年3月期」
-  rows: { label: string; previous: string; current: string; note?: string }[];
+  /** 今までの全部の行（並び・中身は変えていない。古い画面・資料用） */
+  rows: FinancialRow[];
+  /**
+   * 2026-11-03 追加：もうけ（損益）。売上高・粗利・営業利益・経常利益・当期純利益。
+   * 元本の返済はここに入らない
+   */
+  profitAndLoss: FinancialGroup;
+  /**
+   * 2026-11-03 追加：お金の動き（資金繰り）。当期純利益＋減価償却費−元本の返済＝現金の増減、手元資金の前期末→当期末、月商の何か月分
+   */
+  cashMovement: FinancialGroup & {
+    /** 計算式（例：「当期純利益 ＋ 減価償却費 − 元本の返済 ＝ 現金の増減」） */
+    formula: string;
+    /** 当期の内訳（表示用。どれを足し、どれを引くか） */
+    breakdown: FinancialFormulaTerm[];
+    /** 当期の内訳を1行にした文（例：「▲272万円 ＋ 120万円 − 240万円 ＝ ▲392万円」） */
+    breakdownText: string;
+    /** 手元資金の前期末→当期末（例：「手元資金 1,200万円 → 808万円（▲392万円）」） */
+    cashChangeText: string;
+  };
+  /** 固定の注記：「元本の返済は費用ではないので営業利益には入りません。ただし手元のお金は減ります」 */
+  principalNote: string;
 };
 
 // ---- 踏ん張れば伸びる余地（仮定の試算。単位：万円。lib/financials.ts の getUpsideSummary() で計算） ----
@@ -116,6 +164,13 @@ export type AskAnswer = {
   sources?: { url: string; title: string; kind: "public" | "private" }[];
   /** 検索が実行され、結果を受け取れたか（mode: "web" のときだけ。false なら記事と AI の知識だけの答え） */
   searched?: boolean;
+  /** 根拠の照合（lib/grounding.ts）。根拠を確認できない数字があったときだけ付く。答えそのものは変えない */
+  grounding?: Grounding;
+  /**
+   * mode: "web" で、検索の言葉から会社名・名前・金額・連絡先を伏せたときだけ付く決まった文
+   * （「検索では会社名・名前・金額などを伏せて調べました」。lib/ai/search-query.ts の SEARCH_QUERY_NOTE）
+   */
+  searchQueryNote?: string;
 };
 
 export type CourseProgressStatus ="未着手" | "学習中" | "完了" | "復習をおすすめ";

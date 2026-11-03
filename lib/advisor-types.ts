@@ -1,6 +1,8 @@
 // AI参謀チャットで画面とサーバーがやりとりするデータの形（画面からも import してよい。server-only は付けない）。
 // 会話は本人（デモ用 ID ＋役割）だけのもの。相手の役割には内容も「会話があること」も返さない（lib/advisor.ts）。
 
+import type { Grounding } from "./plan-types";
+
 /** 相談先の仕分け。「不要」は今回の質問では専門家に確認するほどのことが無いという意味 */
 export type AdvisorConsult = "不要" | "銀行" | "税理士" | "その他の専門家";
 
@@ -23,6 +25,16 @@ export type AdvisorMessage =
       sources?: { url: string; title: string; kind: "public" | "private" }[];
       /** web: true で送った相談への返事のとき、検索が実行され結果を受け取れたか（web でない返事には付かない） */
       searched?: boolean;
+      /**
+       * 根拠の照合（lib/grounding.ts）。お店の数字・診断・本人の発言・出典の文に無い数字が返事にあったときだけ付く。
+       * 画面は groundingNotice(grounding) の決まった文を出す。返事そのものは変えない。次の相談で AI に渡す履歴には入れない
+       */
+      grounding?: Grounding;
+      /**
+       * web: true の返事で、検索の言葉から会社名・名前・金額・連絡先を伏せたときだけ付く決まった文
+       * （「検索では会社名・名前・金額などを伏せて調べました」。lib/ai/search-query.ts の SEARCH_QUERY_NOTE）
+       */
+      searchQueryNote?: string;
     };
 
 export type AdvisorState = {

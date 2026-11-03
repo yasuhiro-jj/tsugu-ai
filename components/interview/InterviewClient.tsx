@@ -11,6 +11,7 @@ import SummaryCard from "./SummaryCard";
 import ShareChoice from "./ShareChoice";
 import MySummaries from "./MySummaries";
 import InterviewHistory, { historyItemId } from "./InterviewHistory";
+import { revokeConfirmMessage, REVOKED_NOTICE } from "./revoke";
 
 type Action = "start" | "message" | "summary" | "share";
 
@@ -28,6 +29,8 @@ export default function InterviewClient() {
   const [draft, setDraft] = useState("");
   const [pendingText, setPendingText] = useState<string | null>(null);
   const [shareSavingKey, setShareSavingKey] = useState<ThemeKey | null>(null);
+  // 共有を取り消して診断などが消えたあとの案内（どのテーマの切り替えの後か）
+  const [revokedKey, setRevokedKey] = useState<ThemeKey | null>(null);
   // ページを開いた時点で既に会話があったときだけ「続きから再開」を出す（この画面内で開始した直後は出さない）
   const [resume, setResume] = useState<{ key: ThemeKey; label: string } | null>(null);
 
@@ -122,9 +125,16 @@ export default function InterviewClient() {
   }
 
   async function decideShare(key: ThemeKey, shared: boolean) {
+    setRevokedKey(null);
+    // 「共有する」→「しない」のときだけ、消えるもの（サーバーが返した revokeImpact で true のもの）を先に確かめる。
+    // 消えるものが無ければ確認を出さずに切り替える（今までどおり）
+    const wasShared = state?.themes.find((t) => t.key === key)?.shared === true;
+    const message = !shared && wasShared ? revokeConfirmMessage(state?.revokeImpact) : null;
+    if (message !== null && !window.confirm(message)) return;
     setShareSavingKey(key);
-    await run("share", () => interviewApi.share(key, shared));
+    const ok = await run("share", () => interviewApi.share(key, shared));
     setShareSavingKey(null);
+    if (ok && message !== null) setRevokedKey(key);
   }
 
   const toggleHistory = useCallback((key: ThemeKey, open: boolean) => {
@@ -295,6 +305,7 @@ export default function InterviewClient() {
         themes={state.themes}
         partnerLabel={state.partnerLabel}
         savingKey={shareSavingKey}
+        notice={revokedKey ? { key: revokedKey, text: REVOKED_NOTICE } : null}
         disabled={busy}
         onChangeShare={(key, shared) => void decideShare(key, shared)}
       />

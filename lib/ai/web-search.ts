@@ -23,6 +23,9 @@ import { WEB_SEARCH_ALLOWED_DOMAINS, sourceKindOf, type WebSourceKind } from "..
 import { reserveWebSearchCall } from "./usage";
 import { WEB_RESEARCH_SYSTEM } from "../prompts/web-search";
 import { dataBlock } from "./json-ai";
+import { ServiceError } from "../errors";
+import type { CompanySettings } from "../settings-types";
+import { generalizeForSearch, MSG_SEARCH_QUERY_EMPTY, SEARCH_QUERY_NOTE } from "./search-query";
 
 // 検索先の一覧と出典の判定は、画面からも使えるように lib/web-search-domains.ts に置く（SEC-203）
 export {
@@ -301,23 +304,29 @@ export type PublicInfoResearch = {
   summary: string;
   sources: WebSource[];
   searched: boolean;
+  /** 検索の言葉を一般化した（会社名・名前・金額などを伏せた）ときだけ：SEARCH_QUERY_NOTE */
+  searchQueryNote?: string;
 };
 
 /**
  * 1段目：検索つきの呼び出し。AI に渡すのは「本人の質問」「本人の立場（先代／後継者）」「知識レベル」だけ。
  * 会社名・お店の数字・診断・会社の概要・会話の履歴・講座の記事は渡さない（外部ページの指示でそれらが検索の言葉に入らないように）。
+ * 本人の質問も generalizeForSearch で一般化してから渡す（質問に書かれた会社名・名前・金額・連絡先を検索の言葉に混ぜない）。
+ * 一般化して何も残らなければ、AI も検索の回数も使わずに 400
  */
 export async function researchPublicInfo(
   deps: { db: Client; webAi: WebSearchAi; now?: () => number; sleep?: (ms: number) => Promise<void> },
   demoId: string,
   role: Role,
-  p: { purpose: string; question: string; roleLabel: string; level: string },
+  p: { purpose: string; question: string; roleLabel: string; level: string; settings: CompanySettings },
 ): Promise<PublicInfoResearch> {
+  const g = generalizeForSearch(p.question, p.settings);
+  if (!g) throw new ServiceError(400, MSG_SEARCH_QUERY_EMPTY);
   const user = [
     `相談する人の立場：${p.roleLabel}`,
     `数字や経営の知識レベル：${p.level}`,
     "次の質問に関係する公的な情報を検索し、要点をまとめてください。",
-    dataBlock("question", p.question),
+    dataBlock("question", g.query),
   ].join("\n\n");
   const r = await askWithWebSearch(deps, demoId, role, {
     purpose: p.purpose,
@@ -327,7 +336,7 @@ export async function researchPublicInfo(
     maxChars: WEB_RESEARCH_MAX_CHARS,
     budgetMs: WEB_SEARCH_BUDGET_MS,
   });
-  return { summary: r.text, sources: r.sources, searched: r.searched };
+  return { summary: r.text, sources: r.sources, searched: r.searched, ...(g.changed ? { searchQueryNote: SEARCH_QUERY_NOTE } : {}) };
 }
 
 /** 2段目に使ってよい時間：合計の予算から1段目にかかった時間を引いた残り */

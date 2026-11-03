@@ -32,6 +32,29 @@ import { fillPlanTemplate, tagRef } from "./prompts/plan";
 import { arr, callJsonAi, charLen, dataBlock, DATA_NOTE, dataNote, obj, str } from "./ai/json-ai";
 import type { Role } from "./role";
 import { cautionFor } from "./assertive";
+import { getCompanySettingsFrom } from "./company-settings";
+import { allowedSet, groundingFor, logGrounding } from "./grounding";
+import type { WebSource } from "./ai/web-search";
+
+/**
+ * 講座の質問の答えの根拠の照合（lib/grounding.ts）。根拠＝記事（講座名・記事名・本文）・お店の概要・本人の質問・出典の文。
+ * 検索で出典があるのに引用の文（cited_text）が1つも取れなければ、数字の照合は対象外にする（誤検知を避ける）
+ */
+function groundAsk(
+  answer: AskAnswer,
+  where: string,
+  base: string[],
+  sources?: readonly WebSource[],
+): AskAnswer {
+  const cited = (sources ?? []).map((x) => x.citedText ?? "").filter(Boolean);
+  const skip = sources !== undefined && sources.length > 0 && cited.length === 0;
+  const g = groundingFor(
+    [answer.text, ...answer.terms.map((t) => t.meaning)],
+    skip ? null : allowedSet(base, cited),
+  );
+  logGrounding(where, g);
+  return g ? { ...answer, grounding: g } : answer;
+}
 
 export const ASK_QUESTION_MAX_CHARS = 200;
 export const ASK_MAX_TOKENS = 800;
@@ -145,6 +168,7 @@ export async function askAboutArticle(
   const question = validateAskQuestion(body.question);
   const mode = validateAskMode(body.mode);
   const level = await getLearningLevel(deps.db, demoId);
+  const groundBase = [course.title, article.title, ...article.body, COMPANY_CONTEXT, question];
 
   if (mode === "web") {
     const webAi = deps.webAi;
@@ -157,6 +181,7 @@ export async function askAboutArticle(
       question,
       roleLabel: "後継者",
       level,
+      settings: await getCompanySettingsFrom(deps.db, demoId),
     });
     // 2段目：検索なしのふだんの呼び出し。記事・お店の概要と、1段目の要点（データとして）を合わせて答える
     const system = [
@@ -192,9 +217,15 @@ export async function askAboutArticle(
       (v) => parseAskAnswerWith(v, ASK_WEB_ANSWER_MAX_CHARS),
     );
     // 出典は1段目の sources をそのまま付ける
-    const answer: AskAnswer = { ...out, sources: publicSources(research.sources), searched: research.searched };
+    const answer: AskAnswer = {
+      ...out,
+      sources: publicSources(research.sources),
+      searched: research.searched,
+      ...(research.searchQueryNote ? { searchQueryNote: research.searchQueryNote } : {}),
+    };
     const caution = cautionFor("learning.ask", [answer.text, ...answer.terms.map((t) => t.meaning)]);
-    return caution ? { ...answer, caution } : answer;
+    const grounded = groundAsk(answer, "learning.ask", groundBase, research.sources);
+    return caution ? { ...grounded, caution } : grounded;
   }
 
   const system = [
@@ -230,5 +261,6 @@ export async function askAboutArticle(
   );
   // 言い切りに見える表現があれば固定の注記を足す（答えは変えない。ログは種類だけ。SEC-A02）
   const caution = cautionFor("learning.ask", [answer.text, ...answer.terms.map((t) => t.meaning)]);
-  return caution ? { ...answer, caution } : answer;
+  const grounded = groundAsk(answer, "learning.ask", groundBase);
+  return caution ? { ...grounded, caution } : grounded;
 }

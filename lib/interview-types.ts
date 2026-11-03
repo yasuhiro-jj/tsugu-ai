@@ -53,6 +53,25 @@ export type InterviewState = {
    * 破棄したテーマは会話を残さない作りなので含まれない。相手の会話は絶対に含めない。
    */
   history: { key: ThemeKey; label: string; messages: ChatMessage[] }[];
+  /**
+   * 共有を取り消すと消えるもの（2026-11-03 追加）。今このデモ用 ID に存在するものだけ true。
+   * 取り消しの確認の文に使う。相手の AI参謀の会話の有無は返さない（myAdvisorChat は本人の会話だけ）
+   */
+  revokeImpact: RevokeImpact;
+};
+
+/** 共有を取り消したときに一緒に消えるもの（lib/plan-store.ts の invalidateDiagnosisStatements と同じ範囲） */
+export type RevokeImpact = {
+  /** 認識差の診断 */
+  diagnosis: boolean;
+  /** 診断を使った学習プラン（今のプラン。取り消すと診断を使う前のプランに戻るか、無くなる） */
+  learningPlanWithDiagnosis: boolean;
+  /** 90日計画 */
+  actionPlan: boolean;
+  /** 決算サマリー・相談用資料 */
+  report: boolean;
+  /** 本人の AI参謀の会話のうち、診断を使ったもの */
+  myAdvisorChat: boolean;
 };
 
 // ---- リクエスト ----

@@ -1,0 +1,36 @@
+/* お金の動きの計算式の内訳と注記（印刷でも読める普通の文で出す） */
+.box {
+  margin: 8px 0 0;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.line {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.label {
+  font-weight: 600;
+}
+
+/* 項目（記号・名前・値）はひとまとまりで折り返す */
+.term {
+  display: inline-block;
+  margin-right: 0.4em;
+}
+
+.op {
+  margin-right: 0.3em;
+  font-weight: 700;
+}
+
+.result {
+  text-decoration: underline;
+}
+
+.note {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}

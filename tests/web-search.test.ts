@@ -23,6 +23,9 @@ import {
   type WebSearchRaw,
 } from "@/lib/ai/web-search";
 import * as domains from "@/lib/web-search-domains";
+import { generalizeForSearch, MSG_SEARCH_QUERY_EMPTY, SEARCH_QUERY_NOTE } from "@/lib/ai/search-query";
+import { saveSettings } from "@/lib/company-settings";
+import { TSUGUMI_SETTINGS } from "@/lib/industry-presets";
 import { PUBLIC_INFO_NOTES, WEB_RESEARCH_SYSTEM, WEB_SEARCH_RULES } from "@/lib/prompts/web-search";
 import { ADVICE_GUIDE } from "@/lib/prompts/advice";
 import { ADVISOR_SYSTEM_TEMPLATE } from "@/lib/prompts/advisor";
@@ -602,5 +605,118 @@ describe("AI参謀 web", () => {
     const plain = buildAdvisorRequest({ role: "successor", history: [], text: "x", diagnosis: null });
     expect(plain.system).not.toContain("<public_info>");
     expect(plain.system).toContain(ADVICE_GUIDE);
+  });
+});
+
+// ---- 検索の言葉の一般化（SEC-201 の続き。2026-11-03） ----
+// 本人の質問に書かれた会社名・名前・金額・連絡先が、1段目（検索ツールに渡る入力）に入らないこと。2段目には元の質問が入ること
+
+describe("検索の言葉の一般化（generalizeForSearch）", () => {
+  const LEAKY = "山田精工の売上3億円で、森川修の借金は2360万円。連絡は taro@example.com か 090-1234-5678、〒123-4567 まで";
+  const MARKS = ["山田精工", "3億円", "森川", "2360", "taro@example.com", "090-1234-5678", "123-4567"];
+  const firstStage = (webAi: FakeWebAi) => webAi.requests[0].system + JSON.stringify(webAi.requests[0].messages);
+
+  /** 設定の会社名を「山田精工」にする（設定の会社名・名前から置き換えることを確かめるため） */
+  async function useYamadaSettings() {
+    const settings = structuredClone(TSUGUMI_SETTINGS);
+    settings.company.name = "山田精工";
+    settings.company.industryNote = "";
+    await saveSettings(db, DEMO_A, "predecessor", { settings, rev: 0 });
+  }
+
+  it("関数：会社名・業種の補足・名前・金額・連絡先を置き換え、何も無ければそのまま", () => {
+    const g = generalizeForSearch("食事処 つぐみ（架空）の和食の食事処で、森川 拓也が月35万円、パート7名、30％の値上げ", TSUGUMI_SETTINGS)!;
+    expect(g.changed).toBe(true);
+    for (const m of ["つぐみ", "和食の食事処", "森川", "拓也", "35", "7名", "30"]) expect(g.query).not.toContain(m);
+    expect(g.query).toContain("この会社");
+    expect(g.query).toContain("後継者");
+    expect(g.query).toContain("〇〇");
+    expect(generalizeForSearch("減価償却費って何ですか？", TSUGUMI_SETTINGS)).toEqual({ query: "減価償却費って何ですか？", changed: false });
+    expect(generalizeForSearch("3億円", TSUGUMI_SETTINGS)).toBeNull();
+    expect(generalizeForSearch("taro@example.com", TSUGUMI_SETTINGS)).toBeNull();
+  });
+
+  it("関数：URL・ドメイン・番地・漢数字の金額・㈱・英字の社名・屋号・敬称を伏せる（security SEC-301〜305）", () => {
+    const cases: [string, string[]][] = [
+      ["https://tsugumi-shokudo.jp を見て、飲食店の家賃の目安を知りたい", ["tsugumi", "https"]],
+      ["tsugumi.co.jp の会社で、飲食店の家賃の目安を知りたい", ["tsugumi", "co.jp"]],
+      ["世田谷区三軒茶屋1-2-3 の店舗で、飲食店の家賃の目安を知りたい", ["1-2-3"]],
+      ["3丁目の店舗で、飲食店の家賃の目安を知りたい", ["3丁目"]],
+      ["売上三億円の飲食店で、家賃の目安を知りたい", ["三億"]],
+      ["借入が二千三百六十万ある飲食店の返済の目安を知りたい", ["二千三百六十万"]],
+      ["売上3億5千万の飲食店で、家賃の目安を知りたい", ["3億", "5千万"]],
+      ["㈱つぐみの飲食店で、家賃の目安を知りたい", ["つぐみ", "㈱"]],
+      ["Tsugumi Co., Ltd. の飲食店で、家賃の目安を知りたい", ["Tsugumi"]],
+      ["丸福商店の飲食店で、家賃の目安を知りたい", ["丸福"]],
+      ["田中くんと山本店長が退職する飲食店の人件費の目安", ["田中", "山本"]],
+    ];
+    for (const [q, marks] of cases) {
+      const g = generalizeForSearch(q, TSUGUMI_SETTINGS);
+      expect(g, q).not.toBeNull();
+      for (const m of marks) expect(g!.query, q).not.toContain(m);
+      expect(g!.changed, q).toBe(true);
+    }
+    // 小数の数字（1.8か月）や「e-Stat」はドメインとして消さない
+    expect(generalizeForSearch("手元資金が1.8か月分の飲食店は少ないですか", TSUGUMI_SETTINGS)!.query).toContain("飲食店");
+    expect(generalizeForSearch("e-Stat の飲食店の統計の見方を知りたい", TSUGUMI_SETTINGS)!.query).toContain("e-Stat");
+  });
+
+  it("関数：目印の無い社名・人名は見分けられず残る（残リスクとして記録する。SEC-302）", () => {
+    const g = generalizeForSearch("田中が退職する飲食店の人件費の目安を知りたい", TSUGUMI_SETTINGS)!;
+    expect(g.query).toContain("田中");
+  });
+
+  it("講座の質問 mode: web：1段目に会社名・名前・金額・メール・電話が入らず、2段目には元の質問が入る。注記の文が付く", async () => {
+    await useYamadaSettings();
+    const ai = fakeJsonAi([ASK_OK]);
+    const webAi = fakeWebAi();
+    const a = await askAboutArticle({ db, ai, webAi }, DEMO_A, "successor", { ...ARTICLE_Q, question: LEAKY.slice(0, 200), mode: "web" });
+    const s1 = firstStage(webAi);
+    for (const m of MARKS) expect(s1).not.toContain(m);
+    expect(s1).toContain("この会社");
+    expect(JSON.stringify(ai.requests[0].messages)).toContain(LEAKY.slice(0, 200));
+    expect(a.searchQueryNote).toBe(SEARCH_QUERY_NOTE);
+  });
+
+  it("AI参謀 web：1段目に会社名・名前・金額・メール・電話が入らず、2段目には元の質問が入る。保存後も注記の文が残る", async () => {
+    await useYamadaSettings();
+    const ai = fakeJsonAi([{ reply: "返事", points: [], consult: "不要", consult_note: "" }]);
+    const webAi = fakeWebAi();
+    const st = await sendAdvisorMessage({ db, ai, webAi }, DEMO_A, "predecessor", LEAKY, { web: true });
+    const s1 = firstStage(webAi);
+    for (const m of MARKS) expect(s1).not.toContain(m);
+    expect(JSON.stringify(ai.requests[0].messages)).toContain(LEAKY);
+    expect(st.messages[1]).toMatchObject({ from: "ai", searchQueryNote: SEARCH_QUERY_NOTE });
+    expect((await getAdvisorStateFrom(db, DEMO_A, "predecessor")).messages[1]).toMatchObject({ searchQueryNote: SEARCH_QUERY_NOTE });
+  });
+
+  it("一般化で空・短すぎになったら、AI も検索も呼ばずに 400", async () => {
+    const ai = fakeJsonAi([ASK_OK]);
+    const webAi = fakeWebAi();
+    for (const question of ["森川修 2360万円", "taro@example.com 090-1234-5678"]) {
+      const err = await askAboutArticle({ db, ai, webAi }, DEMO_A, "successor", { ...ARTICLE_Q, question, mode: "web" }).catch((e) => e);
+      expect(err).toBeInstanceOf(ServiceError);
+      expect((err as ServiceError).status).toBe(400);
+      expect((err as ServiceError).userMessage).toBe(MSG_SEARCH_QUERY_EMPTY);
+      const err2 = await sendAdvisorMessage({ db, ai, webAi }, DEMO_A, "successor", question, { web: true }).catch((e) => e);
+      expect((err2 as ServiceError).status).toBe(400);
+    }
+    expect(webAi.requests).toHaveLength(0);
+    expect(ai.requests).toHaveLength(0);
+    expect(await webCalls()).toBe(0);
+    // AI参謀の会話は保存されず、また送れる（送信中の印は外れている）
+    expect((await getAdvisorStateFrom(db, DEMO_A, "successor")).messages).toHaveLength(0);
+  });
+
+  it("検索なしの相談・講座の質問は何も変わらない（元の質問がそのまま入り、注記も付かない）", async () => {
+    const ai = fakeJsonAi([ASK_OK, { reply: "返事", points: [], consult: "不要", consult_note: "" }]);
+    const webAi = fakeWebAi();
+    const a = await askAboutArticle({ db, ai, webAi }, DEMO_A, "successor", { ...ARTICLE_Q, question: "森川修の借金2360万円は多い？" });
+    expect(a.searchQueryNote).toBeUndefined();
+    expect(JSON.stringify(ai.requests[0].messages)).toContain("森川修の借金2360万円は多い？");
+    const st = await sendAdvisorMessage({ db, ai, webAi }, DEMO_A, "successor", "森川修の借金2360万円は多い？");
+    expect(JSON.stringify(ai.requests[1].messages)).toContain("森川修の借金2360万円は多い？");
+    expect("searchQueryNote" in st.messages[1]).toBe(false);
+    expect(webAi.requests).toHaveLength(0);
   });
 });

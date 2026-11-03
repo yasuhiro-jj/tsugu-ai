@@ -10,6 +10,7 @@ import { formatDateTime } from "@/components/format";
 import { useElapsedSeconds } from "@/components/use-elapsed";
 import DiagnosisView from "./DiagnosisView";
 import FinancialTable from "./FinancialTable";
+import GroundingNote from "./GroundingNote";
 import styles from "./DiagnosisView.module.css";
 
 type Props = {
@@ -104,6 +105,8 @@ export default function DiagnosisSection({ initialRecord, financial, role }: Pro
             <br />
             継ぐ・継がない、税務・融資などの判断は、お二人と専門家で行ってください。
           </p>
+          {/* 共有済みの要約・お店の数字で根拠を確かめられなかった数字・発言（サーバーの照合結果） */}
+          <GroundingNote grounding={record.grounding} />
           <DiagnosisView
             diagnosis={record.diagnosis}
             afterQuestions={

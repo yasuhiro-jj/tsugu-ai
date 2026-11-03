@@ -1,0 +1,63 @@
+/* お店の数字：「もうけ（損益）」と「お金の動き（資金繰り）」の2欄 */
+
+.group {
+  margin-top: 12px;
+}
+
+.groupTitle {
+  margin: 0 0 6px;
+  padding-left: 8px;
+  border-left: 4px solid var(--color-primary);
+  font-size: 1rem;
+}
+
+.table {
+  table-layout: auto;
+}
+
+/* スマホ幅：表をカード型の縦並びに切り替える（横にはみ出さない） */
+@media (max-width: 480px) {
+  .table,
+  .table thead,
+  .table tbody,
+  .table tr,
+  .table th,
+  .table td {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .table tbody tr {
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+  }
+
+  /* 全体の .data-table（右寄せ・折り返さない）より優先させるため、要素名つきで指定する */
+  table.table th,
+  table.table td {
+    padding: 2px 0;
+    border: none;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .table td[data-label]::before {
+    content: attr(data-label) "：";
+    color: var(--color-muted);
+    font-size: 0.85rem;
+    font-weight: 400;
+  }
+}

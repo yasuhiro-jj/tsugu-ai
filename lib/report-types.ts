@@ -7,7 +7,7 @@
 // - すべて「下書き」。本人が確認・修正してから使う。AI が書いた文だけは PUT /api/report で直して保存できる（数字の表は直せない）
 // - 資料を作り直す（POST /api/report）と、直した文は消えて AI の新しい下書きに戻る
 
-import type { ActionStatus, PlanAction, UpsideItem } from "./plan-types";
+import type { ActionStatus, Grounding, PlanAction, UpsideItem } from "./plan-types";
 
 /** その欄を誰が作ったか。"app"＝アプリの計算・固定文、"ai"＝AI の文、"app+ai"＝数字はアプリ・説明は AI */
 export type ReportMadeBy = "app" | "ai" | "app+ai";
@@ -28,7 +28,15 @@ export type ReportNumberTable = {
   source: string;
   /** 列の見出し 例：{ previous: "前期（2025年3月期）", current: "当期（2026年3月期）" } */
   columns: { previous: string; current: string };
+  /** 全部の行（groups があれば groups の行を上から順につないだもの） */
   rows: ReportNumberRow[];
+  /**
+   * 2026-11-03 追加：見出しつきの行のまとまり（例：「もうけ（損益）」「お金の動き（資金繰り）」）。
+   * 損益と資金繰りを分けて見せるため。画面はあればこれで見出しを付けて出す
+   */
+  groups?: { title: string; rows: ReportNumberRow[] }[];
+  /** 2026-11-03 追加：表の下の注記（例：「元本の返済は費用ではないので営業利益には入りません。ただし手元のお金は減ります」） */
+  note?: string;
 };
 
 /** 根拠つきの1項目（AI） */
@@ -209,6 +217,11 @@ export type ReportState = {
   editedAt?: string;
   /** 編集欄の初期値：AI が書いた文の部分（今の保存内容。編集後は編集後の文）。PUT /api/report の `ai` と同じ形 */
   editable: ReportAiParts;
+  /**
+   * 根拠の照合（lib/grounding.ts）。AI の文（editable の部分）に、お店の数字・試算・診断・90日計画に無い数字があったときだけ付く。
+   * 表示のたびに今の文から作り直す。画面は groundingNotice(grounding) の決まった文を出す
+   */
+  grounding?: Grounding;
   summary: ReportSummary;
   bankDoc: ReportBankDoc;
 };

@@ -244,6 +244,22 @@
   margin: 8px 0 10px;
 }
 
+/* 数字の表の「もうけ（損益）」「お金の動き（資金繰り）」の見出し。印刷でも文字で分かる */
+.group + .group {
+  margin-top: 12px;
+}
+
+.groupTitle {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+}
+
+.tableNote {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
 .table {
   width: 100%;
 }
