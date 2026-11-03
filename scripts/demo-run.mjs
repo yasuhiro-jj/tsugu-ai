@@ -2,15 +2,18 @@
 // 使い方: node scripts/demo-run.mjs <baseURL> [出力フォルダ]
 //   例: node scripts/demo-run.mjs https://tsugu-ai.vercel.app screenshots/demo-run-1
 //   出力フォルダの既定は screenshots/demo-run-<日時>（screenshots/ は Git 対象外）
-// 終了コード: 0=最後まで通り、認識差に資金繰りが出て、学習プランの1番目が「資金繰りの基本」
+// 終了コード: 0=最後まで通り、認識差に資金繰りが出て、診断後の学習プランの1番目が「資金繰りの基本」で、
+//               前のプラン／今のプランの比較表示が出た（診断前から資金繰りが1番目でも不合格にはしない）
 //             1=最後まで通ったが期待と違う / 2=途中で止まった
 //
 // 進め方（ボタンを押して進める。API を直接呼ぶのは最後の確認の読み取りと後片付けだけ）
 // 1. 先代として入る → 6テーマの面談（回答は scripts/demo-scenario.mjs）→ 要約を「この内容でOK」→ 共有の選択
 // 2. 後継者として入る → 同じ
-// 3. 比較画面で「AIに認識差を整理してもらう」
-// 4. 学習プラン画面で「学習プランを作る」
-// 5. 90日計画画面で「90日計画の下書きを作る」
+// 3. 学習プラン画面で「学習プランを作る」（診断前。「学びたいこと」は画面の初期値のまま）
+// 4. 比較画面で「AIに認識差を整理してもらう」
+// 5. 学習プランを作り直し、前のプラン／今のプランの比較表示を確かめる
+// 6. 90日計画画面で「90日計画の下書きを作る」
+// 7. 診断・学習・90日計画を幅375pxでも撮り、横のはみ出しを調べる
 // 手順ごとに画面全体を撮る。画面にエラーが出たら（AI の一時エラーなど）少し待って同じ操作をやり直し、回数を数える。
 // 最後に「デモをやり直す」と同じ API でこのデモのデータを消す（KEEP_DATA=1 なら残す）。
 
@@ -48,7 +51,10 @@ const timings = []; // { name, sec }
 let retries = 0;
 const retryLog = [];
 let shotNo = 0;
-const result = { gaps: [], cashflowGap: false, firstCourse: null, usedDiagnosis: null, planCount: null };
+const result = {
+  gaps: [], cashflowGap: false, directions: {}, firstBefore: null, firstAfter: null, compared: false,
+  usedDiagnosis: null, actions: [], planCount: null, mobile: [],
+};
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const browser = await chromium.launch({ executablePath: CHROME, headless: true });
@@ -218,29 +224,81 @@ async function interview(role) {
   console.log(`    回答数: ${Object.entries(replies).map(([k, v]) => `${k}=${v}`).join(" ")}`);
 }
 
-/** ボタンを押して AI の結果を待つ。エラー表示ならやり直す */
+/** ボタンを押して AI の結果を待つ（ボタンの「処理中」が終わるまで）。エラー表示ならやり直す */
 async function pressAndWait({ where, button, done, errorSel }) {
   for (;;) {
-    await button().click();
-    const outcome = await page
-      .waitForFunction(
-        ([doneSel, errSel]) => (document.querySelector(errSel) ? "error" : document.querySelector(doneSel) ? "done" : false),
-        [done, errorSel],
-        { timeout: STALL_MS, polling: 500 },
-      )
-      .then((h) => h.jsonValue());
-    if (outcome === "done") return;
-    const msg = (await page.locator(errorSel).first().textContent())?.trim() ?? "";
-    noteRetry(where, msg);
-    await sleep(4000);
+    const el = await button().elementHandle();
+    await el.click();
+    // 押したボタンが処理中になる → 処理中が終わる（またはボタンが消える）まで待つ
+    await page.waitForFunction((b) => !b.isConnected || b.getAttribute("aria-busy") === "true", el, { timeout: 5_000 }).catch(() => {});
+    await page.waitForFunction((b) => !b.isConnected || b.getAttribute("aria-busy") !== "true", el, { timeout: STALL_MS, polling: 500 });
+    await sleep(500);
+    if ((await page.locator(errorSel).count()) > 0) {
+      const msg = (await page.locator(errorSel).first().textContent())?.trim() ?? "";
+      noteRetry(where, msg);
+      await sleep(4000);
+      continue;
+    }
+    await page.waitForSelector(done, { timeout: 15_000 });
+    return;
   }
 }
+
+// 講座の題名に番号が付いていても（旧表示「1. 資金繰りの基本」）比べられるように、先頭の番号を外す
+const stripNo = (s) => (s ?? "").replace(/^\d+[.．]\s*/, "").trim();
+
+/** 学習プラン画面で作る／作り直す。今のプランの1番目と、前のプランとの比較表示の有無を返す */
+async function makeLearningPlan(tag) {
+  await page.goto(BASE + "/learning", { waitUntil: "networkidle" });
+  await shot(`learning-${tag}-before`);
+  await pressAndWait({
+    where: `学習プラン（${tag}）`,
+    button: () => page.locator("section[aria-labelledby=wants-title] .button-row button"),
+    done: "section[aria-labelledby=plan-title] .plan-list",
+    errorSel: "section[aria-labelledby=wants-title] .form-error",
+  });
+  const sec = page.locator("section[aria-labelledby=plan-title]");
+  const compared = (await sec.locator(".plan-compare").count()) > 0;
+  const cur = compared ? sec.locator(".compare-col--successor") : sec;
+  const first = stripNo(await cur.locator(".plan-item__title").first().textContent());
+  const usedDiagnosis = (await sec.locator(".diag-used").count()) > 0;
+  await shot(`learning-${tag}`);
+  return { first, compared, usedDiagnosis };
+}
+
+/** 幅375px で撮り、横のはみ出しを調べる（はみ出している一番内側の要素を最大5つ） */
+async function mobileCheck(name, url) {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto(BASE + url, { waitUntil: "networkidle" });
+  const file = await shot(`${name}-sp375`);
+  const r = await page.evaluate(() => {
+    const cw = document.documentElement.clientWidth;
+    const overflow = document.documentElement.scrollWidth > cw;
+    const over = [...document.body.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > cw + 1);
+    const leaves = over.filter((e) => !over.some((o) => o !== e && e.contains(o)));
+    const desc = (e) =>
+      `${e.tagName.toLowerCase()}${typeof e.className === "string" && e.className.trim() ? "." + e.className.trim().split(/\s+/).join(".") : ""}「${(e.textContent ?? "").trim().slice(0, 20)}」(右端${Math.round(e.getBoundingClientRect().right)}px)`;
+    return { overflow, sw: document.documentElement.scrollWidth, cw, elements: leaves.slice(0, 5).map(desc) };
+  });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  return { name, file, ...r };
+}
+
+const DIR_KEYS = [
+  ["keep", "守りたいこと"],
+  ["improve", "変えられること"],
+  ["tryNew", "新しく試したいこと"],
+];
 
 let exitCode = 0;
 let stopShot = null;
 try {
   await step("先代の面談と共有の選択", () => interview("predecessor"));
   await step("後継者の面談と共有の選択", () => interview("successor"));
+
+  await step("診断前の学習プラン", async () => {
+    result.firstBefore = (await makeLearningPlan("1-before-diagnosis")).first;
+  });
 
   await step("比較と診断", async () => {
     await page.goto(BASE + "/compare", { waitUntil: "networkidle" });
@@ -251,7 +309,6 @@ try {
       done: ".diagnosis-result .diagnosis",
       errorSel: ".diagnosis-card .form-error",
     });
-    await sleep(500);
     result.gaps = await page.$$eval(".diag-item--gap", (els) =>
       els.map((el) => ({
         importance: el.querySelector(".badge")?.textContent.trim() ?? "",
@@ -260,24 +317,22 @@ try {
       })),
     );
     result.cashflowGap = result.gaps.some((g) => g.theme.includes(EXPECT.gapKeyword) || g.point.includes(EXPECT.gapKeyword));
+    for (const [key] of DIR_KEYS) {
+      result.directions[key] = await page.$$eval(`section[aria-labelledby="diag-directions-${key}"] .diag-item`, (els) =>
+        els.map((el) => {
+          const who = el.querySelector(".badge")?.textContent.trim() ?? "";
+          return `${who ? `(${who})` : ""}${el.querySelector(".diag-item__point")?.textContent.trim() ?? ""}`;
+        }),
+      );
+    }
     await shot("compare-diagnosis");
   });
 
-  await step("後継者の学習プラン", async () => {
-    await page.goto(BASE + "/learning", { waitUntil: "networkidle" });
-    await shot("learning-before");
-    await pressAndWait({
-      where: "学習プラン",
-      button: () => page.locator("section[aria-labelledby=wants-title] .button-row button"),
-      done: "section[aria-labelledby=plan-title] .plan-list",
-      errorSel: "section[aria-labelledby=wants-title] .form-error",
-    });
-    await sleep(500);
-    const sec = page.locator("section[aria-labelledby=plan-title]");
-    const cur = (await sec.locator(".compare-col--successor").count()) > 0 ? sec.locator(".compare-col--successor") : sec;
-    result.firstCourse = (await cur.locator(".plan-item__title").first().textContent())?.trim() ?? null;
-    result.usedDiagnosis = (await sec.locator(".diag-used").count()) > 0;
-    await shot("learning-plan");
+  await step("診断後に学習プランを作り直す", async () => {
+    const r = await makeLearningPlan("2-after-diagnosis");
+    result.firstAfter = r.first;
+    result.compared = r.compared;
+    result.usedDiagnosis = r.usedDiagnosis;
   });
 
   await step("90日計画", async () => {
@@ -289,9 +344,24 @@ try {
       done: ".plan-progress__count",
       errorSel: "section[aria-labelledby=plan-create-title] .form-error",
     });
-    await sleep(500);
-    result.planCount = await page.locator(".timeline li.action").count();
+    result.actions = await page.$$eval(".timeline li.action", (els) =>
+      els.map((el) => ({
+        title: el.querySelector(".action__title")?.textContent.trim() ?? "",
+        meta: el.querySelector(".action__head")?.textContent.replace(/\s+/g, " ").trim() ?? "",
+      })),
+    );
+    result.planCount = result.actions.length;
     await shot("plan");
+  });
+
+  await step("幅375pxの確認", async () => {
+    for (const [name, url] of [
+      ["compare-diagnosis", "/compare"],
+      ["learning-plan", "/learning"],
+      ["plan", "/plan"],
+    ]) {
+      result.mobile.push(await mobileCheck(name, url));
+    }
   });
 } catch (err) {
   exitCode = 2;
@@ -304,15 +374,26 @@ try {
   await Promise.race([browser.close().catch(() => {}), new Promise((r) => setTimeout(r, 10_000))]);
 }
 
-// 講座の題名は「1. 資金繰りの基本」のように番号付き（lib/courses.ts）。先頭の番号を外して比べる
-const firstOk = (result.firstCourse ?? "").replace(/^\d+[.．]\s*/, "") === EXPECT.firstCourseTitle;
-if (exitCode === 0 && !(result.cashflowGap && firstOk)) exitCode = 1;
+const afterOk = result.firstAfter === EXPECT.firstCourseTitle;
+const beforeSame = result.firstBefore === EXPECT.firstCourseTitle;
+if (exitCode === 0 && !(result.cashflowGap && afterOk && result.compared)) exitCode = 1;
+const smallTry = result.actions.filter((a) => /試/.test(a.title));
+const tryNewLunch = (result.directions.tryNew ?? []).some((t) => /ランチ|SNS/.test(t));
+const dir = (k) => result.directions[k] ?? [];
 
 const lines = [
   `診断に「${EXPECT.gapKeyword}」の認識差: ${result.cashflowGap ? "出た" : "出なかった"}`,
   `認識差の見出し: ${result.gaps.length ? result.gaps.map((g) => `[${g.importance}] ${g.theme}｜${g.point}`).join(" ／ ") : "（なし）"}`,
-  `学習プランの1番目: ${result.firstCourse ?? "（なし）"}（「${EXPECT.firstCourseTitle}」か: ${firstOk ? "はい" : "いいえ"}、診断の反映表示: ${result.usedDiagnosis === null ? "-" : result.usedDiagnosis ? "あり" : "なし"}）`,
-  `90日計画の件数: ${result.planCount ?? "（なし）"}`,
+  ...DIR_KEYS.map(([k, label]) => `これからの選択肢・${label}（${k}）: ${dir(k).length}件 ${dir(k).join(" ／ ")}`),
+  `後継者の「ランチとSNS」が tryNew に: ${tryNewLunch ? "入った" : "入っていない"}`,
+  `診断前のプランの1番目: ${result.firstBefore ?? "（なし）"}${beforeSame ? "（診断前から資金繰りが1番目＝変化が見えない）" : ""}`,
+  `診断後のプランの1番目: ${result.firstAfter ?? "（なし）"}（「${EXPECT.firstCourseTitle}」か: ${afterOk ? "はい" : "いいえ"}、診断の反映表示: ${result.usedDiagnosis === null ? "-" : result.usedDiagnosis ? "あり" : "なし"}）`,
+  `前のプラン／今のプランの比較表示: ${result.compared ? "出た" : "出なかった"}`,
+  `90日計画の件数: ${result.planCount ?? "（なし）"}（「試」を含む行動: ${smallTry.length}件）`,
+  ...result.actions.map((a, i) => `  行動${i + 1}: ${a.title}  [${a.meta}]`),
+  ...result.mobile.map(
+    (m) => `幅375px ${m.name}: ${m.overflow ? `はみ出しあり（scrollWidth ${m.sw} > ${m.cw}）${m.elements.join("、")}` : "はみ出しなし"}  ${m.file}`,
+  ),
   `所要時間: ${timings.map((t) => `${t.name} ${t.sec}秒`).join(" ／ ")}（合計 ${timings.reduce((a, t) => a + t.sec, 0)}秒）`,
   `AI の一時エラーなどでやり直した回数: ${retries}${retryLog.length ? `（${retryLog.join(" ／ ")}）` : ""}`,
   ...(stopShot ? [`止まった画面: ${stopShot}`] : []),
