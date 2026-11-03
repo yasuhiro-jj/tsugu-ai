@@ -17,8 +17,8 @@ export default async function InterviewPage() {
       <section className="card" aria-labelledby="interview-purpose-title">
         <h2 id="interview-purpose-title">この面談の目的</h2>
         <p>
-          ただ会話をするためではなく、<strong>先代の思いや判断の理由を、記録として残す</strong>ための面談です。
-          一度言葉にして残しておけば、先代が同じ話を何度も繰り返さなくても、伝えたい人に思いを伝えられます。
+          ただ会話をするためではなく、<strong>先代の気持ちや判断の理由、後継者の気持ちや考えを、記録として保存する</strong>ための面談です。
+          一度言葉にして残しておけば、同じ話を何度も繰り返さなくても、伝えたい人に思いを伝えられます。
           細かなこだわりや、そう考える理由、実際の場面まで、遠慮なくお話しください。
         </p>
         <p className="chat__help">
