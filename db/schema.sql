@@ -85,6 +85,17 @@ CREATE TABLE IF NOT EXISTS action_plans (
   updated_at TEXT NOT NULL
 );
 
+-- AI参謀チャットの会話（2026-11-03 追加）。本人だけのもの：demo_id ＋ role ごとに1行で、相手の役割からは読まない。
+-- 診断・学習プラン・90日計画の材料にもしない。DELETE /api/demo と保存期間の削除で消す。
+CREATE TABLE IF NOT EXISTS advisor_chats (
+  demo_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('predecessor', 'successor')),
+  messages TEXT NOT NULL DEFAULT '[]',
+  rev INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (demo_id, role)
+);
+
 -- 保存期間の削除（lib/retention.ts）などの定期処理の最後の実行時刻。1時間に1回だけ動かすために使う（SEC-201）。
 -- demo_id は持たない（利用者のデータは入らない）。
 CREATE TABLE IF NOT EXISTS maintenance (

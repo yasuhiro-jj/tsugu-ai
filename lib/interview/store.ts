@@ -185,6 +185,8 @@ export function deleteDemoDataStatements(demoId: string): { sql: string; args: s
   return [
     { sql: `DELETE FROM theme_records WHERE demo_id = ?`, args: [demoId] },
     { sql: `DELETE FROM interviews WHERE demo_id = ?`, args: [demoId] },
+    // AI参謀の会話（両方の役割とも。lib/advisor.ts）
+    { sql: `DELETE FROM advisor_chats WHERE demo_id = ?`, args: [demoId] },
     ...deletePlanDataStatements(demoId),
   ];
 }

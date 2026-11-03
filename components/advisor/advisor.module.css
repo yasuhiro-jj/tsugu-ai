@@ -1,0 +1,128 @@
+/* AI参謀に相談する（面談の画面の見た目に合わせる） */
+
+.private {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius);
+  background: var(--color-ok-soft);
+  color: var(--color-primary);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.privateLabel {
+  display: inline-block;
+  margin-right: 6px;
+}
+
+.suggest {
+  margin-bottom: 16px;
+}
+
+.suggestTitle {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.suggestList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.suggestButton {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font: inherit;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.suggestButton:hover {
+  background: var(--color-ok-soft);
+}
+
+.suggestButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.aiText {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.meText {
+  overflow-wrap: anywhere;
+}
+
+.extra {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--color-border);
+  white-space: normal;
+  font-size: 0.95rem;
+}
+
+.pointsTitle {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.points {
+  margin: 0 0 8px;
+  padding-left: 1.3em;
+}
+
+.points li {
+  overflow-wrap: anywhere;
+}
+
+.points li + li {
+  margin-top: 4px;
+}
+
+.consult {
+  margin: 0 0 8px;
+}
+
+.consultNote {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.draftNote {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.turns {
+  font-weight: 600;
+}
+
+.resetArea {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+@media (max-width: 480px) {
+  .private {
+    font-size: 0.95rem;
+  }
+}

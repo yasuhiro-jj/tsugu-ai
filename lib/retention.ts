@@ -14,7 +14,7 @@ import "server-only";
 // 「最後に使った日時」の判定（決めごと）：
 //   demo_id ごとに、次の時刻の最大値を「最後に使った日時」とする。
 //     interviews.updated_at / theme_records.updated_at / diagnoses.created_at（updated_at 列が無いため）/
-//     learning.updated_at / course_progress.updated_at / action_plans.updated_at / ai_usage.updated_at
+//     learning.updated_at / course_progress.updated_at / action_plans.updated_at / advisor_chats.updated_at / ai_usage.updated_at
 //   これが保存期間より古いものだけを消す。ai_usage は AI を呼ぶたびに更新されるので「使った」の目印に含める
 //   （ただし ai_usage 自体は消さない）。削除の対象は「消す表に行が残っている demo_id」だけに絞る
 //   （ai_usage だけが残る demo_id を毎回拾って件数枠を使い切らないため）。
@@ -50,7 +50,7 @@ export function demoRetentionDays(): number {
     : DEMO_RETENTION_DAYS_DEFAULT;
 }
 
-// 消す表（deleteDemoDataStatements と同じ6表）の時刻を demo_id ごとに集め、ai_usage の時刻も加えて判定する
+// 消す表（deleteDemoDataStatements と同じ7表）の時刻を demo_id ごとに集め、ai_usage の時刻も加えて判定する
 const SELECT_EXPIRED_SQL = `
 WITH data_times AS (
   SELECT demo_id, updated_at AS t FROM interviews
@@ -59,6 +59,7 @@ WITH data_times AS (
   UNION ALL SELECT demo_id, updated_at FROM learning
   UNION ALL SELECT demo_id, updated_at FROM course_progress
   UNION ALL SELECT demo_id, updated_at FROM action_plans
+  UNION ALL SELECT demo_id, updated_at FROM advisor_chats
 ),
 last_data AS (
   SELECT demo_id, MAX(t) AS last_at FROM data_times GROUP BY demo_id

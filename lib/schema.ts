@@ -69,6 +69,15 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 )`,
+  // AI参謀チャットの会話（本人だけのもの。demo_id ＋ role ごとに1行。相手の役割からは読まない）
+  `CREATE TABLE IF NOT EXISTS advisor_chats (
+  demo_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('predecessor', 'successor')),
+  messages TEXT NOT NULL DEFAULT '[]',
+  rev INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (demo_id, role)
+)`,
   // 保存期間の削除などの定期処理の実行時刻（1処理1行。SEC-201：実行間隔の制限に使う。demo_id は持たない）
   `CREATE TABLE IF NOT EXISTS maintenance (
   key TEXT NOT NULL PRIMARY KEY,
