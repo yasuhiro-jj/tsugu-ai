@@ -120,4 +120,12 @@ export const COLUMN_MIGRATIONS: readonly { table: string; column: string; ddl: s
     column: "pending_at",
     ddl: "ALTER TABLE advisor_chats ADD COLUMN pending_at TEXT",
   },
+  {
+    // REV-001：AI参謀の会話が使った診断の createdAt（診断を使っていなければ NULL）。
+    // 共有の取り消し・診断の作り直しで会話を消すために使う（lib/advisor.ts・lib/plan-store.ts）。
+    // 新しい DB にも CREATE のあとにこの ALTER で入る（CREATE 文は db/schema.sql と揃えるため変えていない）
+    table: "advisor_chats",
+    column: "diagnosis_created_at",
+    ddl: "ALTER TABLE advisor_chats ADD COLUMN diagnosis_created_at TEXT",
+  },
 ];

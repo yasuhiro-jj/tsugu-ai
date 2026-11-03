@@ -11,6 +11,8 @@ import "server-only";
 import type { AskAnswer, CourseId, LearningState } from "./plan-types";
 import type { ApiOptions } from "./api";
 import { ServiceError } from "./errors";
+import { validateText } from "./validation";
+import { getLearningLevel } from "./learning";
 import { COMPANY_CONTEXT } from "./demo-profiles";
 import { getCourse, isCourseId } from "./courses";
 import { ASK_LEVEL_GUIDE_LV1, ASK_LEVEL_GUIDE_LV2, ASK_SYSTEM_TEMPLATE } from "./prompts/ask";
@@ -31,11 +33,7 @@ const MEANING_MAX_CHARS = 120;
 export const ASK_ROLES: readonly Role[] = ["successor"];
 export const ASK_API_OPTIONS: ApiOptions = { where: "learning.ask", mutation: "json", roles: ASK_ROLES };
 
-// 制御文字（改行・タブを含む）・見えない書式文字・行区切りを弾く
-const BAD_CHARS = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
-
 type Level = LearningState["level"];
-const LEVELS: readonly Level[] = ["Lv1", "Lv2", "Lv3", "Lv4"];
 
 // ---- 入力検証 ----
 
@@ -51,14 +49,14 @@ export function validateAskCourse(courseId: unknown, articleNo: unknown) {
 }
 
 export function validateAskQuestion(value: unknown): string {
-  if (typeof value !== "string") throw new ServiceError(400, "質問を入力してください");
-  if (BAD_CHARS.test(value)) throw new ServiceError(400, "質問に使えない文字（改行など）が含まれています");
-  const t = value.trim();
-  if (charLen(t) === 0) throw new ServiceError(400, "質問を入力してください");
-  if (charLen(t) > ASK_QUESTION_MAX_CHARS) {
-    throw new ServiceError(400, `質問は${ASK_QUESTION_MAX_CHARS}文字以内で入力してください`);
-  }
-  return t;
+  // 1行の質問：改行・タブなどの制御文字は不可
+  return validateText(value, {
+    max: ASK_QUESTION_MAX_CHARS,
+    allowNewline: false,
+    emptyMessage: "質問を入力してください",
+    tooLongMessage: `質問は${ASK_QUESTION_MAX_CHARS}文字以内で入力してください`,
+    badCharMessage: "質問に使えない文字（改行など）が含まれています",
+  });
 }
 
 // ---- AI の返事 ----
@@ -99,12 +97,6 @@ export function parseAskAnswer(v: Record<string, unknown>): AskAnswer | null {
 
 // ---- 本体 ----
 
-async function loadLevel(deps: AiDeps, demoId: string): Promise<Level> {
-  const rs = await deps.db.execute({ sql: `SELECT level FROM learning WHERE demo_id = ?`, args: [demoId] });
-  const level = rs.rows[0]?.level;
-  return LEVELS.includes(level as Level) ? (level as Level) : "Lv1";
-}
-
 export function levelGuide(level: Level): string {
   return level === "Lv1" ? ASK_LEVEL_GUIDE_LV1 : ASK_LEVEL_GUIDE_LV2;
 }
@@ -119,7 +111,7 @@ export async function askAboutArticle(
   if (!ASK_ROLES.includes(role)) throw new ServiceError(403, "この画面は後継者として入ると使えます");
   const { course, article } = validateAskCourse(body.courseId, body.articleNo);
   const question = validateAskQuestion(body.question);
-  const level = await loadLevel(deps, demoId);
+  const level = await getLearningLevel(deps.db, demoId);
 
   const system = [
     fillPlanTemplate(ASK_SYSTEM_TEMPLATE, {

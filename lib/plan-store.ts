@@ -45,6 +45,9 @@ export function invalidateDiagnosisStatements(demoId: string): Stmt[] {
     { sql: `DELETE FROM action_plans WHERE demo_id = ?`, args: [demoId] },
     // 決算サマリー・相談用資料（lib/report.ts）も診断から作るので、同じトランザクションで消す
     { sql: `DELETE FROM reports WHERE demo_id = ?`, args: [demoId] },
+    // AI参謀の会話のうち、診断を AI に渡したもの（診断をもとにした返事を含む。REV-001）。両方の役割とも。
+    // 診断を一度も使っていない会話（diagnosis_created_at が NULL）は残す
+    { sql: `DELETE FROM advisor_chats WHERE demo_id = ? AND diagnosis_created_at IS NOT NULL`, args: [demoId] },
     {
       sql: `UPDATE learning SET
               current_plan = CASE WHEN ${KEEP("current_plan")} = 1 THEN current_plan

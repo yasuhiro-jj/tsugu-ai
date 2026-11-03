@@ -128,3 +128,4 @@ CREATE TABLE IF NOT EXISTS maintenance (
 -- 既存のデータベース向けの列追加（アプリは列が無いときだけ流す。lib/schema.ts の COLUMN_MIGRATIONS）
 -- ALTER TABLE action_plans ADD COLUMN diagnosis_created_at TEXT;
 -- ALTER TABLE advisor_chats ADD COLUMN pending_at TEXT;
+-- ALTER TABLE advisor_chats ADD COLUMN diagnosis_created_at TEXT;

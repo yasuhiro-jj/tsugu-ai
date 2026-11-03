@@ -11,6 +11,40 @@ export const SUMMARY_MAX_ITEMS = 10;
 
 const SUMMARY_FIELDS = ["statements", "ai_observations", "unconfirmed"] as const;
 
+/**
+ * 画面の表示を崩す文字：制御文字（改行・タブを含む）、見えない書式文字（\p{Cf}：向きの制御 U+200E/200F・
+ * U+202A〜202E・U+2066〜2069・U+061C、幅のない文字 U+200B〜200D、U+FEFF など）、行区切り U+2028/2029
+ */
+export const BAD_TEXT_CHARS = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
+
+export type TextRule = {
+  /** 文字数の上限（サロゲートペアは1文字） */
+  max: number;
+  /** true なら改行（LF）だけは許す。CRLF・CR は LF にそろえる */
+  allowNewline: boolean;
+  emptyMessage: string;
+  tooLongMessage: string;
+  badCharMessage: string;
+};
+
+/**
+ * 利用者が入力する1つの文の共通の検証（REV-006。AI参謀・講座の質問・90日計画の行動の文）。
+ * 文字列でない・前後の空白を除いて空 → emptyMessage、使えない文字 → badCharMessage、長すぎ → tooLongMessage（すべて 400）。
+ * 前後の空白は取り除いて返す。切り詰めはしない。
+ */
+export function validateText(value: unknown, rule: TextRule): string {
+  if (typeof value !== "string") throw new ServiceError(400, rule.emptyMessage);
+  const normalized = rule.allowNewline ? value.replace(/\r\n?/g, "\n") : value;
+  const text = normalized.trim();
+  if (charLength(text) === 0) throw new ServiceError(400, rule.emptyMessage);
+  // 使えない文字は前後の空白を除く前の文で確かめる（末尾の改行・タブも、改行を許さない欄では 400）
+  if (BAD_TEXT_CHARS.test(rule.allowNewline ? normalized.replace(/\n/g, "") : normalized)) {
+    throw new ServiceError(400, rule.badCharMessage);
+  }
+  if (charLength(text) > rule.max) throw new ServiceError(400, rule.tooLongMessage);
+  return text;
+}
+
 
 /** 面談のメッセージ本文：前後の空白を除いて 1〜1000 文字 */
 export function validateMessageText(value: unknown): string {

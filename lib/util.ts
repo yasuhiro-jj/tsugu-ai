@@ -12,6 +12,12 @@ export function jstToday(now: Date = new Date()): string {
   return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
+/** 日本時間の日時（YYYY-MM-DD HH:mm）。iso は UTC の ISO 文字列 */
+export function jstDateTime(iso: string): string {
+  const d = new Date(new Date(iso).getTime() + 9 * 60 * 60 * 1000).toISOString();
+  return `${d.slice(0, 10)} ${d.slice(11, 16)}`;
+}
+
 /** 文字数（サロゲートペアを1文字として数える） */
 export function charLen(s: string): number {
   return Array.from(s).length;

@@ -12,6 +12,7 @@ import { randomBytes } from "node:crypto";
 import type { Client } from "@libsql/client";
 import type { ActionPlanState, ActionStatus, PlanAction } from "./plan-types";
 import { MSG_CONFLICT, ServiceError } from "./errors";
+import { validateText } from "./validation";
 import { getDb } from "./db";
 import { getCourses } from "./courses";
 import { getDiagnosisFrom } from "./diagnosis";
@@ -32,6 +33,11 @@ type Phase = PlanAction["phase"];
 const OWNERS: readonly Owner[] = ["先代", "後継者", "二人"];
 const PHASES: readonly Phase[] = ["1-30", "31-60", "61-90"];
 const STATUSES: readonly ActionStatus[] = ["未着手", "進行中", "完了"];
+
+/** 期間の表示名（90日計画の検証メッセージと資料の第7章で共通。REV-007） */
+export const PHASE_LABEL: Record<Phase, string> = { "1-30": "1〜30日目", "31-60": "31〜60日目", "61-90": "61〜90日目" };
+/** 期限の早い順（90日計画の保存と資料の第7章で共通。REV-008） */
+export const byDue = (x: PlanAction, y: PlanAction) => (x.due < y.due ? -1 : x.due > y.due ? 1 : 0);
 
 // ---- 日付 ----
 
@@ -139,7 +145,7 @@ export function parseActionPlan(
     if (actions.length >= ACTIONS_MAX) break;
   }
   if (actions.length < ACTIONS_MIN) return null;
-  actions.sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
+  actions.sort(byDue);
   return { actions, message };
 }
 
@@ -204,9 +210,11 @@ async function loadRow(db: Client, demoId: string) {
  * 消すのに失敗しても返さない。
  */
 async function loadValidRow(db: Client, demoId: string) {
-  const diag = await getDiagnosisFrom(db, demoId);
+  // 計画を先に読み、そのあと診断を照合する（lib/report.ts・lib/advisor.ts と同じ順番。間に取り消しが確定しても古い計画を返さず、
+  // 後から作り直された新しい計画を「古い診断と違う」として消さないため）
   const loaded = await loadRow(db, demoId);
   if (!loaded) return null;
+  const diag = await getDiagnosisFrom(db, demoId);
   if (diag && loaded.diagnosisCreatedAt === diag.createdAt) return loaded;
   try {
     // 古い計画だけを消す（同時に今の診断から作られた計画は消さない）
@@ -309,12 +317,6 @@ export const ACTION_TITLE_MAX = 200;
 export const MSG_LAST_ACTION = "90日計画には行動が1件以上必要なため、最後の1件は消せません。先に別の行動を残すか、文を書き換えてください";
 export const MSG_PLAN_CHANGED = "診断が変わりました。もう一度90日計画を作ってください";
 
-const PHASE_LABEL: Record<Phase, string> = { "1-30": "1〜30日目", "31-60": "31〜60日目", "61-90": "61〜90日目" };
-
-/** 制御文字・改行・見えない書式文字（画面の表示を崩すもの）を含むか */
-// \p{Cf} は向きの制御（U+200E/200F・U+202A〜202E・U+2066〜2069・U+061C）、幅のない文字（U+200B〜200D）、U+FEFF などをまとめて含む。U+2028/2029 は行区切り
-const BAD_CHARS = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
-
 function validateActionId(id: unknown): string {
   if (typeof id !== "string" || id.length === 0 || id.length > 40) {
     throw new ServiceError(400, "行動の指定が正しくありません");
@@ -322,19 +324,16 @@ function validateActionId(id: unknown): string {
   return id;
 }
 
-/** 行動の文：前後の空白を取り、空・長すぎ・制御文字は弾く（切り詰めはしない） */
+/** 行動の文：前後の空白を取り、空・長すぎ・改行や制御文字は弾く（切り詰めはしない） */
 export function validateActionTitle(v: unknown): string {
-  if (typeof v !== "string") throw new ServiceError(400, "行動の文を入力してください");
-  const t = v.trim();
-  if (t.length === 0) throw new ServiceError(400, "行動の文を入力してください");
-  if (BAD_CHARS.test(t)) throw new ServiceError(400, "行動の文に使えない文字（改行・制御文字など）が含まれています");
-  if (Array.from(t).length > ACTION_TITLE_MAX) {
-    throw new ServiceError(400, `行動の文は${ACTION_TITLE_MAX}文字以内にしてください`);
-  }
-  return t;
+  return validateText(v, {
+    max: ACTION_TITLE_MAX,
+    allowNewline: false,
+    emptyMessage: "行動の文を入力してください",
+    tooLongMessage: `行動の文は${ACTION_TITLE_MAX}文字以内にしてください`,
+    badCharMessage: "行動の文に使えない文字（改行・制御文字など）が含まれています",
+  });
 }
-
-const byDue = (x: PlanAction, y: PlanAction) => (x.due < y.due ? -1 : x.due > y.due ? 1 : 0);
 
 // ---- 書き換えの回数制限（AI を使わない書き込み。AI の回数とは別） ----
 

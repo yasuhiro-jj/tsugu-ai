@@ -34,10 +34,10 @@ import {
   upsideForPrompt,
 } from "./financials";
 import { getDiagnosisFrom, toPublicDiagnosisRecord } from "./diagnosis";
-import { getActionPlanFrom } from "./action-plan";
+import { byDue, getActionPlanFrom, PHASE_LABEL } from "./action-plan";
 import { REPORT_SYSTEM } from "./prompts/report";
 import { arr, callJsonAi, dataBlock, DATA_NOTE, obj, str, type AiDeps, type JsonAiRequest } from "./ai/json-ai";
-import { jstToday, nowIso } from "./util";
+import { jstDateTime, jstToday, nowIso } from "./util";
 import type { Role } from "./role";
 
 export const MSG_REPORT_NEED_DIAGNOSIS = "先に認識差の診断を行ってください（資料は診断の結果をもとに作ります）";
@@ -62,7 +62,6 @@ const QUESTIONS_MAX = 6;
 const PREV_COL = "前期（2025年3月期）";
 const CUR_COL = "当期（2026年3月期）";
 const COLUMNS = { previous: PREV_COL, current: CUR_COL };
-const PHASE_LABEL: Record<PlanAction["phase"], string> = { "1-30": "1〜30日目", "31-60": "31〜60日目", "61-90": "61〜90日目" };
 
 // ---- AI の出力（保存するのはこれだけ） ----
 
@@ -235,12 +234,6 @@ const BANK_LABELS = [
   "当期の現金の動き",
 ];
 
-/** 日本時間の日時（YYYY-MM-DD HH:mm） */
-function jstDateTime(iso: string): string {
-  const d = new Date(new Date(iso).getTime() + 9 * 60 * 60 * 1000).toISOString();
-  return `${d.slice(0, 10)} ${d.slice(11, 16)}`;
-}
-
 /** 保存済みの AI の文と、今の数字・90日計画から、画面にそのまま出せる形を組み立てる */
 export function buildReportState(
   ai: ReportAiParts,
@@ -258,7 +251,7 @@ export function buildReportState(
   if (hasPlan) sources.push("二人の90日計画");
 
   const indicator = (labels: string[]) => pickRows(labels, ch);
-  const pendingNote = "要確認：MVP では最新の情報を取りに行きません。デモ前に公式情報で確認し、出典と日付を登録します。";
+  const pendingNote = "要確認：この版では外部の統計データは扱っていません。自店の数字で見るべき指標だけを示します。";
 
   return {
     isDraft: true,
@@ -329,13 +322,13 @@ export function buildReportState(
             operatingProfitText: up.operatingProfitAfterText,
             totalEffectText: up.totalText,
             items: up.items,
-            basis: `当期の営業利益 ${up.operatingProfitBeforeText} に、4つの改善策の効果の合計 ${up.totalText} を足した試算`,
+            basis: `当期の営業利益 ${up.operatingProfitBeforeText} に、${up.items.length}つの改善策の効果の合計 ${up.totalText} を足した試算`,
           },
         },
         assumptions: [
           "当期（2026年3月期）の数字をもとに、1年分の効果を計算しています。",
           ...up.items.map((i) => `${i.title}：${i.assumption}（効果 ${i.effectText}）`),
-          "4つの改善策をすべて実施し、ほかの条件（客数・物価・金利など）は変わらないと仮定しています。",
+          `${up.items.length}つの改善策をすべて実施し、ほかの条件（客数・物価・金利など）は変わらないと仮定しています。`,
           up.note,
         ],
         viewpoints: ai.outlook_viewpoints,
@@ -345,7 +338,7 @@ export function buildReportState(
         title: "対策と優先順位",
         by: "app",
         items: [...meta.actions]
-          .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0))
+          .sort(byDue)
           .map((a) => ({ title: a.title, owner: a.owner, due: a.due, phaseLabel: PHASE_LABEL[a.phase], status: a.status })),
         emptyMessage: hasPlan ? null : MSG_NO_ACTION_PLAN,
         source: hasPlan ? "二人の90日計画（期限の早い順）" : "90日計画（未作成）",

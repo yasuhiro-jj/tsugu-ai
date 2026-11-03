@@ -91,12 +91,25 @@ async function loadLearningRow(db: Client, demoId: string): Promise<LearningRow 
   const row = rs.rows[0];
   if (!row) return null;
   return {
-    level: LEVELS.includes(row.level as Level) ? (row.level as Level) : "Lv1",
+    level: parseLevel(row.level),
     wants: typeof row.wants === "string" ? row.wants : DEFAULT_WANTS,
     current: parseStoredPlan(row.current_plan),
     previous: parseStoredPlan(row.previous_plan),
     rev: Number(row.rev ?? 0),
   };
+}
+
+function parseLevel(v: unknown): Level {
+  return LEVELS.includes(v as Level) ? (v as Level) : "Lv1";
+}
+
+/**
+ * 後継者の今の知識レベル（learning.level。行が無い・値が正しくなければ Lv1）。
+ * 講座の解説・講座の質問（lib/learning-ask.ts）・AI参謀（lib/advisor.ts）で共通に使う（REV-005）。demo_id で絞る
+ */
+export async function getLearningLevel(db: Client, demoId: string): Promise<Level> {
+  const rs = await db.execute({ sql: `SELECT level FROM learning WHERE demo_id = ?`, args: [demoId] });
+  return parseLevel(rs.rows[0]?.level);
 }
 
 async function ensureLearningRow(db: Client, demoId: string): Promise<LearningRow> {
@@ -367,7 +380,7 @@ export async function explainQuestion(
     throw new ServiceError(400, "選んだ答えの指定が正しくありません");
   }
   if (chosen === question.answer) throw new ServiceError(400, "この問題は正解です。解説は間違えた問題だけに出します");
-  const level = (await loadLearningRow(deps.db, demoId))?.level ?? "Lv1";
+  const level = await getLearningLevel(deps.db, demoId);
   const textOf = (key: string) => question.choices.find((c) => c.key === key)!.text;
   const user = [
     `知識レベル：${level}`,
