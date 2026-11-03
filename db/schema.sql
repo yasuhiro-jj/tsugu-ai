@@ -87,12 +87,14 @@ CREATE TABLE IF NOT EXISTS action_plans (
 
 -- AI参謀チャットの会話（2026-11-03 追加）。本人だけのもの：demo_id ＋ role ごとに1行で、相手の役割からは読まない。
 -- 診断・学習プラン・90日計画の材料にもしない。DELETE /api/demo と保存期間の削除で消す。
+-- pending_at は「送信中」の印（SEC-A01。AI を呼ぶ前に rev つきで書いて予約し、成功・失敗のどちらでも外す。90秒より古い印は無視）。
 CREATE TABLE IF NOT EXISTS advisor_chats (
   demo_id TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('predecessor', 'successor')),
   messages TEXT NOT NULL DEFAULT '[]',
   rev INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL,
+  pending_at TEXT,
   PRIMARY KEY (demo_id, role)
 );
 
@@ -107,6 +109,15 @@ CREATE TABLE IF NOT EXISTS reports (
   updated_at TEXT NOT NULL
 );
 
+-- 90日計画の書き換え（POST・DELETE /api/plan/action）の1日あたりの回数（2026-11-03 追加）。デモ用 ID ごと、AI の回数とは別。
+-- day は usageDayKey（日本時間の朝9時で切り替わる）。デモのやり直しでは消さない。前日以前の行は保存期間の削除で消す。
+CREATE TABLE IF NOT EXISTS plan_edit_usage (
+  demo_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  calls INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (demo_id, day)
+);
+
 -- 保存期間の削除（lib/retention.ts）などの定期処理の最後の実行時刻。1時間に1回だけ動かすために使う（SEC-201）。
 -- demo_id は持たない（利用者のデータは入らない）。
 CREATE TABLE IF NOT EXISTS maintenance (
@@ -116,3 +127,4 @@ CREATE TABLE IF NOT EXISTS maintenance (
 
 -- 既存のデータベース向けの列追加（アプリは列が無いときだけ流す。lib/schema.ts の COLUMN_MIGRATIONS）
 -- ALTER TABLE action_plans ADD COLUMN diagnosis_created_at TEXT;
+-- ALTER TABLE advisor_chats ADD COLUMN pending_at TEXT;

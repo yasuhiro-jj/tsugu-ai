@@ -23,11 +23,13 @@ import "server-only";
 //
 // - ai_usage / ai_usage_daily は消さない（AI 回数の上限の意味を保つため）。
 //   ai_usage_daily の古い日付の行（AI_USAGE_DAILY_KEEP_DAYS より前）だけは消す（上限の判定は当日の行しか使わない）
+// - plan_edit_usage（90日計画の書き換え回数）は前日以前の行を消す（判定は当日の行だけ。デモのやり直しでは消さない）
 // - SQL はすべてプレースホルダで値を渡す（表の名前は下の固定文字列だけ）
 // - ログは件数と種類だけ。demo_id の値は出さない
 
 import type { Client } from "@libsql/client";
 import { deleteDemoDataStatements } from "./interview/store";
+import { usageDayKey } from "./ai/usage";
 
 export const DEMO_RETENTION_DAYS_DEFAULT = 7;
 /** 環境変数で上書きできる範囲（誤設定で全部消えたり、ずっと残ったりしないように） */
@@ -95,6 +97,7 @@ export async function purgeExpiredDemos(db: Client, opts: PurgeOptions = {}): Pr
     [
       ...ids.flatMap((id) => deleteDemoDataStatements(id)),
       { sql: `DELETE FROM ai_usage_daily WHERE day < ?`, args: [usageCutoffDay] },
+      { sql: `DELETE FROM plan_edit_usage WHERE day < ?`, args: [usageDayKey(now.toISOString())] },
     ],
     "write",
   );

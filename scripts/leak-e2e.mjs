@@ -1,4 +1,4 @@
-// 通しの漏えいテスト（目印方式）。本物の Claude API を使う（AI 呼び出し 約40回）。
+// 通しの漏えいテスト（目印方式）。本物の Claude API を使う（AI 呼び出し 約45回）。
 // 使い方: node scripts/leak-e2e.mjs <baseURL>
 //   例: node scripts/leak-e2e.mjs http://localhost:3000
 // 終了コード: 0=合格 / 1=不合格（漏えいの疑いあり） / 2=途中で動かなくなった（判定できず）
@@ -9,8 +9,12 @@
 //    SHAREDMARK-xxxx を入れる（「ちゃんと見えるべきものが見えている」ことの確認用）
 // 2. 各画面を役割ごとに開き、その画面が受け取ったすべての応答（HTML・RSC・/api の JSON・JS）と、
 //    同じ画面の RSC 応答（RSC: 1）を集め、目印が出ないことを確かめる
+// 2b. 先代・後継者それぞれが AI参謀に目印 ADVCANARY-P-xxxx / ADVCANARY-S-xxxx 入りの相談を送る。
+//    本人の /advisor には目印が出ること（検出が働いている前提）、相手の /advisor と、
+//    二人の共有物の画面（/report・/compare・/learning・/plan）には出ないことを確かめる。
+//    決算サマリー資料（POST /api/report）を作り、その応答と /report に、非共有回答・AI参謀の目印が出ないことも確かめる
 // 3. 共有→取り消しで、比較・診断から消えることを確かめる
-// 4. 別のブラウザの文脈（別のデモ用 ID）から何も見えないことを確かめる
+// 4. 別のブラウザの文脈（別のデモ用 ID）から何も見えないことを確かめる（AI参謀・資料の画面を含む）
 // 最後に「デモをやり直す」でこのテストのデータを消す。
 // 回答の文面は scripts/screenshots.mjs のものを使う（架空データ）。
 
@@ -28,6 +32,11 @@ const rand = () => crypto.randomBytes(6).toString("hex");
 const CANARY = { predecessor: `LEAKCANARY-P-${rand()}`, successor: `LEAKCANARY-S-${rand()}` };
 const SHARED_MARK = `SHAREDMARK-${rand()}`;
 const ANY_CANARY = /LEAKCANARY-[PS]-[0-9a-f]{12}/;
+// AI参謀の相談に入れる目印（本人だけのもの。相手の役割・共有物には出てはいけない）
+const ADV_CANARY = { predecessor: `ADVCANARY-P-${rand()}`, successor: `ADVCANARY-S-${rand()}` };
+const ANY_ADV = /ADVCANARY-[PS]-[0-9a-f]{12}/;
+const ADV_TEXT = (c) => `${c} 資金繰りで気になっていることがあります。返済の予定はどう確かめればよいですか。まだ誰にも言っていません`;
+const otherOf = (role) => (role === "predecessor" ? "successor" : "predecessor");
 // 非共有テーマ（締め）の存在の手がかり
 const CLOSING_LABEL = "相手にまだ伝えていない気持ち";
 const CLOSING_KEY = /["'\\]closing["'\\]/;
@@ -204,6 +213,46 @@ try {
     }
   }
 
+  // ---- 2b. AI参謀（本人だけの会話）と決算サマリー資料 ----
+  for (const role of ["predecessor", "successor"]) {
+    await A.api("POST", "/api/role", { role });
+    const r = await A.api("POST", "/api/advisor/message", { text: ADV_TEXT(ADV_CANARY[role]) });
+    if (!r.json.ok) throw new Error(`${role} の AI参謀に失敗: ${r.status} ${r.json.error ?? ""}`);
+    check(r.text.includes(ADV_CANARY[role]), `前提: ${role} の AI参謀の応答に本人の相談（目印）が入っている`, "/api/advisor/message");
+    const hit = [...(r.text.includes(ADV_CANARY[otherOf(role)]) ? ["相手の AI参謀の目印"] : []), ...(ANY_CANARY.test(r.text) ? ["非共有回答の目印"] : [])];
+    check(hit.length === 0, `${role} の AI参謀の応答に、相手の AI参謀の相談・非共有回答の目印が出ない`, hit.join(", "));
+  }
+
+  // 資料は二人の共有物。AI参謀の相談のあとに作り、相談・非共有回答が入らないことを確かめる
+  await A.api("POST", "/api/role", { role: "successor" });
+  const rp = await A.api("POST", "/api/report", {});
+  if (!rp.json.ok) throw new Error(`資料の作成に失敗: ${rp.status} ${rp.json.error ?? ""}`);
+  check(!ANY_CANARY.test(rp.text), "資料 API の応答に非共有回答の目印が出ない", "/api/report");
+  check(!ANY_ADV.test(rp.text), "資料 API の応答に AI参謀の相談の目印が出ない", "/api/report");
+  check(!rp.text.includes(CLOSING_LABEL) && !CLOSING_KEY.test(rp.text), "資料 API の応答に締めのテーマ名・key が出ない", "/api/report");
+
+  for (const role of ["predecessor", "successor"]) {
+    // 本人の /advisor には本人の目印が出る（検出が働いている前提）。相手の目印は出ない
+    const own = await capture(A, role, "/advisor");
+    check(findAll(own, ADV_CANARY[role]).length > 0, `前提: ${role} 本人の /advisor には本人の AI参謀の目印がある（応答 ${own.length} 件）`);
+    const ownHit = [...findAll(own, ADV_CANARY[otherOf(role)]), ...findAll(own, ANY_CANARY)];
+    check(ownHit.length === 0, `${role} 側の /advisor に相手（${otherOf(role)}）の AI参謀の相談・非共有回答の目印が出ない`, ownHit.join(", "));
+    // 二人の共有物の画面には、どちらの AI参謀の目印も出ない
+    for (const path of ["/report", ...PAGES]) {
+      const recs = await capture(A, role, path);
+      const adv = findAll(recs, ANY_ADV);
+      check(adv.length === 0, `${role} 側の ${path} に AI参謀の相談の目印が出ない（応答 ${recs.length} 件）`, adv.join(", "));
+      const hit = findAll(recs, ANY_CANARY);
+      check(hit.length === 0, `${role} 側の ${path} に非共有回答の目印が出ない（応答 ${recs.length} 件）`, hit.join(", "));
+      if (path === "/report") {
+        const html = recs.find((r) => short(r.url) === "/report")?.body ?? "";
+        check(html.includes("report-ch8"), `前提: ${role} 側の /report に作った資料が出ている`);
+        const label = [...findAll(dynamicOnly(recs), CLOSING_LABEL), ...findAll(dynamicOnly(recs), CLOSING_KEY)];
+        check(label.length === 0, `${role} 側の /report に締めのテーマ名・key が出ない（静的 JS は除く）`, label.join(", "));
+      }
+    }
+  }
+
   // ---- 3. 共有してから取り消すと、比較・診断から消える ----
   await A.api("POST", "/api/role", { role: "predecessor" });
   const on = await A.api("POST", "/api/interview/share", { themeKey: "closing", shared: true });
@@ -229,11 +278,11 @@ try {
   const B = makeSession(await browser.newContext({ locale: "ja-JP" }));
   for (const role of ["predecessor", "successor"]) {
     const all = [];
-    for (const path of ["/interview", ...PAGES]) all.push(...(await capture(B, role, path)));
+    for (const path of ["/interview", "/advisor", "/report", ...PAGES]) all.push(...(await capture(B, role, path)));
     const api = await B.api("GET", "/api/interview");
     all.push({ url: `${BASE}/api/interview`, body: api.text });
-    const hit = [...findAll(all, ANY_CANARY), ...findAll(all, SHARED_MARK)];
-    check(hit.length === 0, `別のデモ ID（${role}）から、元のデモの回答（共有済みを含む）が見えない`, hit.join(", "));
+    const hit = [...findAll(all, ANY_CANARY), ...findAll(all, SHARED_MARK), ...findAll(all, ANY_ADV)];
+    check(hit.length === 0, `別のデモ ID（${role}）から、元のデモの回答（共有済みを含む）・AI参謀の相談が見えない`, hit.join(", "));
     const html = all.find((r) => short(r.url) === "/compare")?.body ?? "";
     check(html.includes("まだ共有された回答はありません"), `別のデモ ID（${role}）の比較画面は「まだ共有された回答はありません」`);
   }

@@ -76,6 +76,7 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
   messages TEXT NOT NULL DEFAULT '[]',
   rev INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL,
+  pending_at TEXT,
   PRIMARY KEY (demo_id, role)
 )`,
   // 決算サマリー・相談用資料（二人の共有物。demo_id ごとに1行。content は AI の文だけで、数字は表示のたびにアプリが計算する）。
@@ -86,6 +87,14 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
   diagnosis_created_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+)`,
+  // 90日計画の書き換え（POST・DELETE /api/plan/action）の1日あたりの回数（デモ用 ID ごと。AI の回数とは別）。
+  // day は usageDayKey（日本時間の朝9時で切り替わる）。デモのやり直しでは消さない（上限の意味を保つ）。前日以前の行は保存期間の削除で消す
+  `CREATE TABLE IF NOT EXISTS plan_edit_usage (
+  demo_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  calls INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (demo_id, day)
 )`,
   // 保存期間の削除などの定期処理の実行時刻（1処理1行。SEC-201：実行間隔の制限に使う。demo_id は持たない）
   `CREATE TABLE IF NOT EXISTS maintenance (
@@ -104,5 +113,11 @@ export const COLUMN_MIGRATIONS: readonly { table: string; column: string; ddl: s
     table: "action_plans",
     column: "diagnosis_created_at",
     ddl: "ALTER TABLE action_plans ADD COLUMN diagnosis_created_at TEXT",
+  },
+  {
+    // SEC-A01：AI参謀の「送信中」の印（AI を呼ぶ前に予約する。古い印は無視）
+    table: "advisor_chats",
+    column: "pending_at",
+    ddl: "ALTER TABLE advisor_chats ADD COLUMN pending_at TEXT",
   },
 ];

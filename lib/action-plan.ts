@@ -19,6 +19,7 @@ import { getLearningStateFrom } from "./learning";
 import { ACTION_EXAMPLES, ACTION_PLAN_SYSTEM_TEMPLATE, fillPlanTemplate, tagRef } from "./prompts/plan";
 import { arr, callJsonAi, dataBlock, DATA_NOTE, obj, str, type AiDeps } from "./ai/json-ai";
 import { jstToday, nowIso } from "./plan-store";
+import { usageDayKey } from "./ai/usage";
 import type { Role } from "./role";
 
 export const MSG_NEED_DIAGNOSIS = "先に認識差の診断を行ってください";
@@ -335,12 +336,37 @@ export function validateActionTitle(v: unknown): string {
 
 const byDue = (x: PlanAction, y: PlanAction) => (x.due < y.due ? -1 : x.due > y.due ? 1 : 0);
 
-/** 有効な計画を読み、change で作った行動の一覧を条件つきで保存する */
+// ---- 書き換えの回数制限（AI を使わない書き込み。AI の回数とは別） ----
+
+/** 90日計画の書き換え（POST・DELETE /api/plan/action）の、デモ用 ID ごとの1日あたりの上限 */
+export const PLAN_EDITS_DAILY_LIMIT = 300;
+export const MSG_PLAN_EDIT_LIMIT = `90日計画の書き換えは1日${PLAN_EDITS_DAILY_LIMIT}回までです。日本時間の朝9時に回数が戻ります`;
+
+/**
+ * 書き換えを1回分数える（上限内なら +1）。上限を超えたら 429。
+ * 1日の区切りは usageDayKey（AI の1日上限と同じ。日本時間の朝9時）。条件つき UPSERT は原子的なので同時に来ても上限を超えない。
+ * デモのやり直しでは消さない（lib/retention.ts が前日以前の行だけを消す）
+ */
+export async function reservePlanEdit(
+  db: Client,
+  demoId: string,
+  limit: number = PLAN_EDITS_DAILY_LIMIT,
+): Promise<void> {
+  const rs = await db.execute({
+    sql: `INSERT INTO plan_edit_usage (demo_id, day, calls) VALUES (?, ?, 1)
+          ON CONFLICT(demo_id, day) DO UPDATE SET calls = calls + 1 WHERE calls < ?`,
+    args: [demoId, usageDayKey(nowIso()), limit],
+  });
+  if (rs.rowsAffected !== 1) throw new ServiceError(429, MSG_PLAN_EDIT_LIMIT);
+}
+
+/** 有効な計画を読み、change で作った行動の一覧を条件つきで保存する（書き換えの回数を先に数える） */
 async function mutateActions(
   db: Client,
   demoId: string,
   change: (state: ActionPlanState) => PlanAction[],
 ): Promise<ActionPlanState> {
+  await reservePlanEdit(db, demoId);
   const loaded = await loadValidRow(db, demoId);
   if (!loaded) throw new ServiceError(404, "90日計画がまだありません");
   const actions = change(loaded.state);

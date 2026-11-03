@@ -11,6 +11,9 @@ import "server-only";
 // - 診断は toPublicDiagnosisRecord と同じく diagnosis だけを使う（どのテーマが共有されたか basedOnThemeKeys は渡さない。SEC-103）
 // - AI の呼び出しは callJsonAi（reserveAiCall で回数を予約。壊れた返事・一時エラーは1回だけ再送）
 // - AI が失敗したら本人の発言も保存しない
+// - 同時送信（SEC-A01）：AI を呼ぶ前に会話の行へ「送信中」の印（pending_at）を rev つきで書いて予約する。
+//   予約できなかった送信は AI を呼ばずに 409（AI の回数・費用を使わない）。成功時は保存と同時に、失敗時は必ず印を外す。
+//   ADVISOR_PENDING_TTL_MS より古い印は無視する（処理が途中で落ちても固まらない）
 // - 入力本文・AI の返事はログに出さない
 
 import type { Client } from "@libsql/client";
@@ -44,6 +47,9 @@ export const ADVISOR_HISTORY_MAX_CHARS = 8000;
 export const ADVISOR_MAX_TOKENS = 2000;
 /** Route の maxDuration 60 秒より短く（DB の読み書きの分を残す。面談と同じ） */
 export const ADVISOR_AI_BUDGET_MS = 50_000;
+/** 「送信中」の印の有効時間。AI の時間（50秒）と Route の maxDuration（60秒）より長く、固まったときは早めに戻る長さ */
+export const ADVISOR_PENDING_TTL_MS = 90_000;
+export const MSG_ADVISOR_BUSY = "前の相談にまだ答えています。返事が出てからもう一度送ってください";
 
 const REPLY_MAX = 1500;
 const POINT_MAX = 200;
@@ -65,7 +71,7 @@ export function validateAdvisorText(value: unknown): string {
 
 // ---- 保存・取得（すべて demo_id ＋ role で絞る） ----
 
-type Stored = { messages: AdvisorMessage[]; rev: number };
+type Stored = { messages: AdvisorMessage[]; rev: number; pendingAt: string | null };
 
 function isConsult(v: unknown): v is AdvisorConsult {
   return typeof v === "string" && (ADVISOR_CONSULTS as readonly string[]).includes(v);
@@ -103,12 +109,16 @@ function parseStoredMessages(raw: unknown): AdvisorMessage[] {
 
 async function loadChat(db: Client, demoId: string, role: Role): Promise<Stored> {
   const rs = await db.execute({
-    sql: `SELECT messages, rev FROM advisor_chats WHERE demo_id = ? AND role = ?`,
+    sql: `SELECT messages, rev, pending_at FROM advisor_chats WHERE demo_id = ? AND role = ?`,
     args: [demoId, role],
   });
   const row = rs.rows[0];
-  if (!row) return { messages: [], rev: 0 };
-  return { messages: parseStoredMessages(row.messages), rev: Number(row.rev) };
+  if (!row) return { messages: [], rev: 0, pendingAt: null };
+  return {
+    messages: parseStoredMessages(row.messages),
+    rev: Number(row.rev),
+    pendingAt: typeof row.pending_at === "string" ? row.pending_at : null,
+  };
 }
 
 function turnsOf(messages: AdvisorMessage[]): number {
@@ -125,16 +135,44 @@ function toState(messages: AdvisorMessage[]): AdvisorState {
 }
 
 /**
- * 読んだときの rev のままなら保存する（同時に2回送られたときの二重保存を防ぐ）。
- * 行が無かったとき（rev 0）は新しく作る。行はいつも rev 1 以上なので、rev 0 の UPDATE は起きない。
+ * AI を呼ぶ前に「送信中」の印を書いて予約する（SEC-A01）。予約できた後の rev を返す。
+ * - 読んだときの rev のままで、印が無いか ADVISOR_PENDING_TTL_MS より古いときだけ書ける（条件つき UPDATE は原子的なので同時に来ても1つだけ）
+ * - 行が無かったとき（rev 0）は新しく作る。行はいつも rev 1 以上なので、rev 0 の UPDATE は起きない
+ * - 予約できなければ 409（AI は呼ばない）
  */
-async function saveChat(db: Client, demoId: string, role: Role, messages: AdvisorMessage[], readRev: number) {
+async function reserveChat(db: Client, demoId: string, role: Role, readRev: number): Promise<number> {
+  const now = Date.now();
+  const at = new Date(now).toISOString();
+  const staleBefore = new Date(now - ADVISOR_PENDING_TTL_MS).toISOString();
   const rs = await db.execute({
-    sql: `INSERT INTO advisor_chats (demo_id, role, messages, rev, updated_at) VALUES (?, ?, ?, 1, ?)
-          ON CONFLICT(demo_id, role) DO UPDATE SET messages = excluded.messages, rev = advisor_chats.rev + 1,
+    sql: `INSERT INTO advisor_chats (demo_id, role, messages, rev, updated_at, pending_at) VALUES (?, ?, '[]', 1, ?, ?)
+          ON CONFLICT(demo_id, role) DO UPDATE SET rev = advisor_chats.rev + 1, pending_at = excluded.pending_at,
             updated_at = excluded.updated_at
-          WHERE advisor_chats.rev = ?`,
-    args: [demoId, role, JSON.stringify(messages), nowIso(), readRev],
+          WHERE advisor_chats.rev = ? AND (advisor_chats.pending_at IS NULL OR advisor_chats.pending_at < ?)`,
+    args: [demoId, role, at, at, readRev, staleBefore],
+  });
+  if (rs.rowsAffected !== 1) throw new ServiceError(409, MSG_ADVISOR_BUSY);
+  return readRev + 1;
+}
+
+/** AI が失敗したとき：自分の予約（rev が予約時のまま）なら印を外す。ほかの送信が古い印を上書きしていたら何もしない */
+async function releaseChat(db: Client, demoId: string, role: Role, reservedRev: number): Promise<void> {
+  await db.execute({
+    sql: `UPDATE advisor_chats SET pending_at = NULL, rev = rev + 1
+          WHERE demo_id = ? AND role = ? AND rev = ? AND pending_at IS NOT NULL`,
+    args: [demoId, role, reservedRev],
+  });
+}
+
+/**
+ * 予約したときの rev のままなら、会話を保存して印を外す（同時に2回送られたときの二重保存を防ぐ）。
+ * UPDATE だけ（予約で行は必ずある）。予約中に「会話を消す」「デモをやり直す」で行が消えていたら保存せず 409。
+ */
+async function saveChat(db: Client, demoId: string, role: Role, messages: AdvisorMessage[], reservedRev: number) {
+  const rs = await db.execute({
+    sql: `UPDATE advisor_chats SET messages = ?, rev = rev + 1, updated_at = ?, pending_at = NULL
+          WHERE demo_id = ? AND role = ? AND rev = ?`,
+    args: [JSON.stringify(messages), nowIso(), demoId, role, reservedRev],
   });
   if (rs.rowsAffected !== 1) throw new ServiceError(409, MSG_CONFLICT);
 }
@@ -255,7 +293,10 @@ export function buildAdvisorRequest(params: {
   };
 }
 
-/** 本人の相談を送り、AI の返事と一緒に保存する。AI が失敗したら（429・502）本人の発言も保存しない。 */
+/**
+ * 本人の相談を送り、AI の返事と一緒に保存する。AI が失敗したら（429・502）本人の発言も保存しない。
+ * 送信中の印を予約できなければ（同時送信）AI を呼ばずに 409。
+ */
 export async function sendAdvisorMessage(
   deps: AiDeps,
   demoId: string,
@@ -273,13 +314,26 @@ export async function sendAdvisorMessage(
     text,
     diagnosis: await diagnosisForPrompt(deps.db, demoId),
   });
-  const out = await callJsonAi(deps, demoId, role, req, parseAdvisorOutput);
+
+  // 読んだ rev のまま予約できたときだけ AI を呼ぶ（chat.messages は予約の時点でも同じ内容）
+  const reservedRev = await reserveChat(deps.db, demoId, role, chat.rev);
+  let out: AdvisorOutput;
+  try {
+    out = await callJsonAi(deps, demoId, role, req, parseAdvisorOutput);
+  } catch (err) {
+    try {
+      await releaseChat(deps.db, demoId, role, reservedRev);
+    } catch {
+      // 印を外せなくても、ADVISOR_PENDING_TTL_MS で無視されるようになる。元のエラーを返す
+    }
+    throw err;
+  }
 
   const messages: AdvisorMessage[] = [
     ...chat.messages,
     { from: "me", text, at: myAt },
     { from: "ai", text: out.reply, points: out.points, consult: out.consult, consultNote: out.consultNote, at: nowIso() },
   ];
-  await saveChat(deps.db, demoId, role, messages, chat.rev);
+  await saveChat(deps.db, demoId, role, messages, reservedRev);
   return toState(messages);
 }
