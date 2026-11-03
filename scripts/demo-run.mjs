@@ -474,7 +474,8 @@ async function extraSteps() {
   // d. 後継者で講座の記事1に質問する
   await check("d 講座の記事1に質問", async () => {
     await page.goto(BASE + "/learning/cashflow", { waitUntil: "networkidle" });
-    const panel = page.locator("#article-1 + div");
+    // 質問欄は記事のすぐ後ろ（閉じているときは div、開くと section。2026-11-03 の作り直し後の画面）
+    const panel = page.locator("#article-1 + *");
     await panel.getByRole("button", { name: "この記事についてAIに質問する" }).click();
     const ex = panel.locator("ul li button").first();
     const q = ((await ex.textContent()) ?? "").trim();
@@ -482,10 +483,10 @@ async function extraSteps() {
     await pressAndWait({
       where: "講座の質問",
       button: () => panel.locator("form button[type=submit]"),
-      done: "#article-1 + div .explain",
-      errorSel: "#article-1 + div .form-error",
+      done: "#article-1 + section p:has-text('AI の答え（記事から）')",
+      errorSel: "#article-1 + section [role=alert]",
     });
-    const ans = ((await panel.locator(".explain").innerText()) ?? "").trim();
+    const ans = ((await panel.locator("p:has-text('AI の答え（記事から）')").first().locator("xpath=..").innerText()) ?? "").trim();
     quotes.ask = ans;
     await panel.scrollIntoViewIfNeeded();
     await shot("course-ask");
