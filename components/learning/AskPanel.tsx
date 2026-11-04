@@ -28,7 +28,7 @@ function charLen(s: string): number {
   return Array.from(s).length;
 }
 
-/** 出典のリンクは、https で、許可した11件のドメインのページだけにする（javascript: や一覧外のサイトを href に入れない。SEC-203） */
+/** 出典のリンクは、https で、許可した13件のドメインのページだけにする（javascript: や一覧外のサイトを href に入れない。SEC-203） */
 function safeUrl(v: unknown): string | null {
   if (!isAllowedSourceUrl(v)) return null;
   try {

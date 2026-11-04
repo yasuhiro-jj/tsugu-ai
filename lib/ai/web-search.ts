@@ -4,11 +4,11 @@ import "server-only";
 // 講座の質問（lib/learning-ask.ts の mode: "web"）と AI参謀（lib/advisor.ts の web: true）で使う。
 //
 // 守ること：
-// - 検索先は WEB_SEARCH_ALLOWED_DOMAINS の11件だけ（公的機関6件＋民間サービス5件。サブドメインを含む）。別の検索サービスは使わない
+// - 検索先は WEB_SEARCH_ALLOWED_DOMAINS の13件だけ（公的機関・支援機関8件＋民間サービス5件。サブドメインを含む）。別の検索サービスは使わない
 // - 回数の予約・再送は lib/ai/retry.ts の callAiWithRetry（reserveAiCall を必ず通す。1回の質問で1回と数える。
 //   再送したときは再送の分も数える）。Claude 側の検索の回数は max_uses（3回）まで
 // - 構造化出力（output_config.format）は citations と同時に使えないので使わない。返事は普通の文章で受け取る
-// - 出典の URL は、許可した11件のドメインの https のものだけを返し、kind（public／private）を付ける（念のための絞り込み）
+// - 出典の URL は、許可した13件のドメインの https のものだけを返し、kind（public／private）を付ける（念のための絞り込み）
 // - 入力本文・AI の返事・検索結果・SDK のエラー本文はログに出さない（種類・件数だけ）
 // - テストでは WebSearchAi を偽物に差し替える（本物の API は scripts/check-web-search.mjs の1回だけ）
 
@@ -64,7 +64,7 @@ export type WebSource = { url: string; title: string; kind: WebSourceKind; cited
 /** 画面へ返す出典の形 */
 export type PublicWebSource = { url: string; title: string; kind: WebSourceKind };
 
-/** ウェブ検索ツールの定義（allowed_domains は上の11件だけ） */
+/** ウェブ検索ツールの定義（allowed_domains は上の13件だけ） */
 export function webSearchTool() {
   return {
     type: WEB_SEARCH_TOOL_TYPE,

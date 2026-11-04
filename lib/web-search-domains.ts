@@ -13,6 +13,9 @@ export const WEB_SEARCH_PUBLIC_DOMAINS: readonly string[] = [
   "e-stat.go.jp", // 政府統計
   "mhlw.go.jp", // 厚生労働省（最低賃金など）
   "boj.or.jp", // 日本銀行（金利）
+  // 地域の支援機関（オーナー決定 2026-11-04：事業承継の相談先として商工会・商工会議所を加える）
+  "shokokai.or.jp", // 全国商工会連合会・各地の商工会
+  "jcci.or.jp", // 日本商工会議所
 ];
 
 /**
@@ -28,7 +31,7 @@ export const WEB_SEARCH_PRIVATE_DOMAINS: readonly string[] = [
 ];
 
 /**
- * allowed_domains に渡す一覧（公的機関6件＋民間サービス5件＝11件）。
+ * allowed_domains に渡す一覧（公的機関・支援機関8件＋民間サービス5件＝13件）。
  * 追加・変更はオーナーの確認を取ってから（tests/web-search.test.ts で件数を確かめている）
  */
 export const WEB_SEARCH_ALLOWED_DOMAINS: readonly string[] = [...WEB_SEARCH_PUBLIC_DOMAINS, ...WEB_SEARCH_PRIVATE_DOMAINS];

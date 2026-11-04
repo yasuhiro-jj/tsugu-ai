@@ -1,5 +1,5 @@
 // ウェブ検索つきの答え（lib/ai/web-search.ts・講座の質問 mode: "web"・AI参謀 web: true）。Claude は偽物、DB はメモリ。
-// 検索先の一覧（公的機関6件＋民間サービス5件）、出典の集め方と kind、2段階（SEC-201）、検索の1日の上限（SEC-202）、
+// 検索先の一覧（公的機関・支援機関8件＋民間サービス5件）、出典の集め方と kind、2段階（SEC-201）、検索の1日の上限（SEC-202）、
 // 履歴の区切り（SEC-204）、省略時に今と同じ動きになること、役割、回数の予約、指示文の中身を確かめる。
 // 本物の API は scripts/check-web-search.mjs の1回だけ。
 
@@ -171,7 +171,7 @@ async function expectStatus(p: Promise<unknown>, status: number) {
 // ---- 検索先の一覧 ----
 
 describe("検索してよいサイト", () => {
-  it("公的機関6件＋民間サービス5件＝11件だけを allowed_domains に渡す", () => {
+  it("公的機関・支援機関8件＋民間サービス5件＝13件だけを allowed_domains に渡す", () => {
     expect([...WEB_SEARCH_PUBLIC_DOMAINS]).toEqual([
       "chusho.meti.go.jp",
       "jfc.go.jp",
@@ -179,9 +179,11 @@ describe("検索してよいサイト", () => {
       "e-stat.go.jp",
       "mhlw.go.jp",
       "boj.or.jp",
+      "shokokai.or.jp",
+      "jcci.or.jp",
     ]);
     expect([...WEB_SEARCH_PRIVATE_DOMAINS]).toEqual(["airregi.jp", "bixid.net", "manageboard.jp", "diggle.jp", "loglass.jp"]);
-    expect(WEB_SEARCH_ALLOWED_DOMAINS).toHaveLength(11);
+    expect(WEB_SEARCH_ALLOWED_DOMAINS).toHaveLength(13);
     const tool = webSearchTool();
     expect(tool).toEqual({
       type: "web_search_20260209",
@@ -189,7 +191,7 @@ describe("検索してよいサイト", () => {
       max_uses: 3,
       allowed_domains: [...WEB_SEARCH_PUBLIC_DOMAINS, ...WEB_SEARCH_PRIVATE_DOMAINS],
     });
-    expect(tool.allowed_domains).toHaveLength(11);
+    expect(tool.allowed_domains).toHaveLength(13);
     // 一覧は server-only でない lib/web-search-domains.ts に置き、lib/ai/web-search.ts は同じものを出す（SEC-203）
     expect(domains.WEB_SEARCH_ALLOWED_DOMAINS).toBe(WEB_SEARCH_ALLOWED_DOMAINS);
     expect(domains.sourceKindOf).toBe(sourceKindOf);

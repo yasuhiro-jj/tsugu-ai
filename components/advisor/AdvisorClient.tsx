@@ -391,7 +391,7 @@ function MessageBubble({ message: m }: { message: AdvisorMessage }) {
 
 type Source = NonNullable<Extract<AdvisorMessage, { from: "ai" }>["sources"]>[number];
 
-/** 念のため、https で、許可した11件のドメインの URL だけをリンクにする（それ以外は表示しない。SEC-203） */
+/** 念のため、https で、許可した13件のドメインの URL だけをリンクにする（それ以外は表示しない。SEC-203） */
 function isHttpsUrl(url: unknown): url is string {
   return isAllowedSourceUrl(url);
 }
