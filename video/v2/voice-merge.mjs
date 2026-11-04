@@ -22,6 +22,12 @@ const BASE = path.join(OUT_DIR, "tsugu-ai-demo-v2-nonarration.mp4");
 const OUTPUT = path.join(OUT_DIR, "tsugu-ai-demo-v2-voice.mp4");
 const FFMPEG = createRequire(import.meta.url)("ffmpeg-static");
 const MAX_TEMPO = 1.15;
+// 雑音対策（2026-11-04）。VOICE_GATE=soft（既定）：ゆっくり開け閉めするゲートで合間の雑音を約 -10dB 下げる。
+// 強いゲート（-20dB・速い開け閉め）は「カタカタ」と聞こえたため使わない。VOICE_GATE=off：低い音を切るだけ（一定の小さなうなりが残る）
+const VOICE_GATE = process.env.VOICE_GATE ?? "soft";
+const DENOISE =
+  "highpass=f=120,highpass=f=120," +
+  (VOICE_GATE === "off" ? "" : "agate=threshold=0.008:ratio=2:knee=6:attack=30:release=700:range=0.3,");
 const EXTS = [".m4a", ".mp3", ".wav", ".aac", ".ogg", ".webm", ".mp4"];
 
 function ff(args) {
@@ -66,8 +72,8 @@ for (const s of spoken) {
   ff([
     "-i", src,
     "-af",
-    // 雑音を減らす（2026-11-04 オーナー指示）：録音の雑音は 400Hz より下に続く空調・ファンのような音（約 -46dB）。120Hz より下を切り、話していない合間だけゲートで下げる（約 -69dB に）。afftdn・anlmdn はこの雑音にほとんど効かなかった
-    "highpass=f=120,highpass=f=120,agate=threshold=0.01:ratio=6:attack=5:release=300:range=0.1," +
+    // 雑音を減らす（DENOISE。上の説明を参照）
+    DENOISE +
       "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.15," +
       "areverse,silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.25,areverse," +
       "loudnorm=I=-18:TP=-2:LRA=11",
