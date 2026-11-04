@@ -1,4 +1,4 @@
-// TSUGU AI 3分デモ動画 v2「勘違いを、理解に。」の場面の割り当て（video/v2/storyboard.md の「秒単位の台本」、合計 175 秒）。
+// TSUGU AI 3分デモ動画 v2「勘違いを、理解に。」の場面の割り当て（2026-11-04：オーナーの声に合わせて s02・s03・s10 を延ばし、s04〜s06・s08・s09 を短くした。video/v2/storyboard.md の「秒単位の台本」、合計 175 秒）。
 // cards.mjs・edit.mjs・voice-merge.mjs が読む。`node video/v2/scenes.mjs` で narration.txt（原稿と読み）を書き出す。
 //
 // 時刻は完成した動画の先頭からの秒数。captions の at / to は場面の先頭からの秒数。
@@ -23,8 +23,8 @@ export const SCENES = [
     },
   },
   {
-    id: "s02", start: 12, dur: 22, kind: "card", card: "split", fadeOut: false,
-    captions: [{ at: 0, to: 22, text: "すれ違う、二人の思い" }],
+    id: "s02", start: 12, dur: 23.5, kind: "card", card: "split", fadeOut: false,
+    captions: [{ at: 0, to: 23.5, text: "すれ違う、二人の思い" }],
     narration: {
       text: "先代は、できれば継いでほしい。でも、大変な仕事だから、継がせたくない気持ちもある。昔のように強制もできない。自分のやり方は、うまく言葉にできない。後継者は、本当は興味がある。でも、同じ働き方ではなく、もっと広い世界で挑戦したい。",
       yomi: "先代は、できれば継いでほしい。でも、大変な仕事だから、継がせたくない気持ちもある。昔のように、強制もできない。自分のやり方は、うまく言葉にできない。後継者は、本当は興味がある。でも、同じ働き方ではなく、もっと広い世界で、挑戦したい。",
@@ -32,7 +32,7 @@ export const SCENES = [
   },
   {
     // 左右の言葉が中央の文に寄る（cards.mjs が書き出したコマを順に並べる）
-    id: "s03", start: 34, dur: 10, kind: "card", card: "converge", fadeIn: false,
+    id: "s03", start: 35.5, dur: 12.5, kind: "card", card: "converge", fadeIn: false,
     captions: [],
     cardText: "でも、心の芯は同じ。「この事業を続けたい」",
     narration: {
@@ -41,31 +41,31 @@ export const SCENES = [
     },
   },
   {
-    id: "s04", start: 44, dur: 18, kind: "screen",
-    captions: [{ at: 0, to: 18, text: "本音は、一人ずつ AI に話す" }],
+    id: "s04", start: 48, dur: 17, kind: "screen",
+    captions: [{ at: 0, to: 17, text: "本音は、一人ずつ AI に話す" }],
     narration: {
       text: "TSUGU AI では、先代と後継者が、別々に AI と話します。守りたいものも、やってみたいことも。相手に見せるかどうかは、本人が選びます。",
       yomi: "ツグ エーアイでは、先代と後継者が、別々に、エーアイと話します。守りたいものも、やってみたいことも。相手に見せるかどうかは、本人が選びます。",
     },
   },
   {
-    id: "s05", start: 62, dur: 24, kind: "screen",
-    captions: [{ at: 0, to: 24, text: "守るものと、変えられるものが見えてくる" }],
+    id: "s05", start: 65, dur: 21.5, kind: "screen",
+    captions: [{ at: 0, to: 21.5, text: "守るものと、変えられるものが見えてくる" }],
     narration: {
       text: "共有した回答だけで、AI が二人の考えを整理します。守りたい伝統と、新しく試したいこと。言葉と理屈にすれば、伝統は受け継げる。勘やルーティンを仕組みに置き換えれば、空いた時間で、新しい挑戦ができる。",
       yomi: "共有した回答だけで、エーアイが、二人の考えを整理します。守りたい伝統と、新しく試したいこと。言葉と理屈にすれば、伝統は受け継げる。勘やルーティンを、仕組みに置き換えれば、空いた時間で、新しい挑戦ができる。",
     },
   },
   {
-    id: "s06", start: 86, dur: 16, kind: "screen",
-    captions: [{ at: 0, to: 16, text: "やる気になると、策が見えてくる" }],
+    id: "s06", start: 86.5, dur: 15, kind: "screen",
+    captions: [{ at: 0, to: 15, text: "やる気になると、策が見えてくる" }],
     narration: {
       text: "後継者がやる気になると、次にやることが見えてきます。学ぶ順番と、二人で取り組む90日の行動。",
       yomi: "後継者がやる気になると、次にやることが見えてきます。学ぶ順番と、二人で取り組む、きゅうじゅうにちの行動。",
     },
   },
   {
-    id: "s07", start: 102, dur: 8, kind: "card", card: "circle",
+    id: "s07", start: 101.5, dur: 8, kind: "card", card: "circle",
     captions: [{ at: 0, to: 8, text: "先代・後継者・AI・支援する人で進める" }],
     narration: {
       text: "そして承継は、二人だけで抱えるものではありません。",
@@ -73,23 +73,23 @@ export const SCENES = [
     },
   },
   {
-    id: "s08", start: 110, dur: 24, kind: "screen",
-    captions: [{ at: 0, to: 24, text: "分かりやすい資料で、商工会や金融機関に相談しやすく" }],
+    id: "s08", start: 109.5, dur: 23, kind: "screen",
+    captions: [{ at: 0, to: 23, text: "分かりやすい資料で、商工会や金融機関に相談しやすく" }],
     narration: {
       text: "商工会や金融機関も、お店の実情が分からなければ、支援のしようがありません。AI がお店の数字を見える形にして、分かりやすい相談用の資料を一緒に作ります。融資や税金の結論は、専門家と一緒に。",
       yomi: "商工会や金融機関も、お店の実情が分からなければ、支援のしようがありません。エーアイが、お店の数字を見える形にして、分かりやすい相談用の資料を、一緒に作ります。融資や税金の結論は、専門家と一緒に。",
     },
   },
   {
-    id: "s09", start: 134, dur: 24, kind: "screen",
-    captions: [{ at: 0, to: 24, text: "24時間365日、相談できて、記録が残る" }],
+    id: "s09", start: 132.5, dur: 23, kind: "screen",
+    captions: [{ at: 0, to: 23, text: "24時間365日、相談できて、記録が残る" }],
     narration: {
       text: "専門家と話せるのは、月にわずかな時間。AI なら、いつでも相談できて、話したことは記録に残ります。経営、広報、販売も、一緒に考える。言った、言わないの勘違いも防げます。",
       yomi: "専門家と話せるのは、月にわずかな時間。エーアイなら、いつでも相談できて、話したことは、記録に残ります。経営、広報、販売も、一緒に考える。言った、言わないの勘違いも、防げます。",
     },
   },
   {
-    id: "s10", start: 158, dur: 12, kind: "card", card: ["closing", "logo"], cardSplit: 6.5,
+    id: "s10", start: 155.5, dur: 14.5, kind: "card", card: ["closing", "logo"], cardSplit: 8.5,
     captions: [],
     cardText: "勘違いを、理解に。先代と後継者と AI で、家業の次の形を。",
     narration: {
