@@ -45,3 +45,6 @@ video/node_modules/
 
 # オーナーの声の録音（個人の声のため Git に載せない）
 video/voice/
+
+# v2 のオーナーの声の録音（個人の声のため Git に載せない）
+video/v2/voice/
