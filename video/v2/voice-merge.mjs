@@ -1,7 +1,7 @@
 // v2：オーナーの声（場面ごとの録音 video/v2/voice/s01〜s10.*）を、字幕だけの版に重ねて MP4 を作る。
 // v1 の video/voice-merge.mjs をコピーして直したもの（v1 は変更しない）。
 // 実行：node video/v2/voice-merge.mjs
-// - 各ファイルの前後の無音を切り、音量をそろえ（loudnorm）、場面の上限に収まらなければ最大 1.15 倍まで速める
+// - 雑音を減らし（highpass・agate）、各ファイルの前後の無音を切り、音量をそろえ（loudnorm）、場面の上限に収まらなければ最大 1.15 倍まで速める
 // - 1.15 倍でも収まらない場面は作らずに止め、撮り直す場面を表示する
 // - 出力：video/v2/out/tsugu-ai-demo-v2-voice.mp4（字幕だけの版 tsugu-ai-demo-v2-nonarration.mp4 が必要）
 // - 場面の上限は narration.txt の「上限○秒」と同じ（scenes.mjs の limitOf）
@@ -66,7 +66,9 @@ for (const s of spoken) {
   ff([
     "-i", src,
     "-af",
-    "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.15," +
+    // 雑音を減らす（2026-11-04 オーナー指示）：録音の雑音は 400Hz より下に続く空調・ファンのような音（約 -46dB）。120Hz より下を切り、話していない合間だけゲートで下げる（約 -69dB に）。afftdn・anlmdn はこの雑音にほとんど効かなかった
+    "highpass=f=120,highpass=f=120,agate=threshold=0.01:ratio=6:attack=5:release=300:range=0.1," +
+      "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.15," +
       "areverse,silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.25,areverse," +
       "loudnorm=I=-18:TP=-2:LRA=11",
     "-ar", "48000", "-ac", "2", clean,
