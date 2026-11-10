@@ -86,7 +86,7 @@ export default function ReportPreviewClient() {
           <Link className="button button--secondary" href="/v2/review">
             内容を直す
           </Link>
-          <button className="button button--danger" type="button" disabled={busy} onClick={() => void resetAll()}>
+          <button className="button button--secondary button--danger" type="button" disabled={busy} onClick={() => void resetAll()}>
             すべて消す
           </button>
         </div>

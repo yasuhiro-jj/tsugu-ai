@@ -110,7 +110,7 @@ export default function ReviewClient() {
                             直す
                           </button>
                           <button
-                            className="button button--danger button--small"
+                            className="button button--secondary button--danger button--small"
                             type="button"
                             disabled={busy}
                             onClick={() => void act("removeItem", { itemId: item.id })}
