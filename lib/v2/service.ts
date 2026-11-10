@@ -10,8 +10,10 @@
 import {
   CONSULTANT_KEYS,
   CONSULTANTS,
+  DEFAULT_PURPOSE,
   FIXED_UNCONFIRMED,
   INTRO,
+  MAX_PURPOSE,
   MAX_TEXT,
   OPTION_KEYS,
   OPTIONS,
@@ -62,12 +64,12 @@ function toView(session: Session): SessionView {
 }
 
 /** 入力の文字を整える（制御文字を除き、前後の空白を取る）。空・長すぎはエラー */
-export function cleanText(value: unknown): string {
+export function cleanText(value: unknown, max: number = MAX_TEXT): string {
   if (typeof value !== "string") throw new V2Error("bad_input", "文字を入力してください。");
   // eslint-disable-next-line no-control-regex
   const text = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim();
   if (text === "") throw new V2Error("bad_input", "文字を入力してください。");
-  if (text.length > MAX_TEXT) throw new V2Error("bad_input", `${MAX_TEXT}文字以内で入力してください。`);
+  if (text.length > max) throw new V2Error("bad_input", `${max}文字以内で入力してください。`);
   return text;
 }
 
@@ -133,6 +135,7 @@ export function buildReportInput(session: Session): ReportInput {
   if (!consultant) throw new V2Error("no_consultant", "相談先を選んでください。");
   return {
     consultantLabel: consultant.label,
+    purpose: session.purpose,
     items: session.items
       .filter((i) => i.selected === true)
       .map((i) => ({ kind: i.kind, theme: i.theme, text: i.text })),
@@ -165,6 +168,7 @@ export function start(deps: Deps, sid: string): Promise<SessionView> {
       reviewConfirmed: false,
       options: [],
       consultant: null,
+      purpose: DEFAULT_PURPOSE,
       report: null,
     };
     advance(deps, session, `${INTRO}\n\n`);
@@ -202,7 +206,9 @@ export function answer(deps: Deps, sid: string, rawText: unknown): Promise<Sessi
       session.log.push({ who: "ai", theme: key, text: reply.reply.trim() });
     } else {
       state.status = "answered";
-      advance(deps, session, "ありがとうございます。次の質問です。\n\n");
+      // 聞き返し以外の返事（受け止めの言葉）は、次の質問の前に添える。質問は1つだけにする
+      const heard = reply.action === "next_theme" ? `${reply.reply.trim()}\n\n` : "";
+      advance(deps, session, `${heard}ありがとうございます。次の質問です。\n\n`);
     }
     return save(deps, session);
   });
@@ -313,14 +319,19 @@ export function setOptions(deps: Deps, sid: string, raw: unknown): Promise<Sessi
   });
 }
 
-/** 相談先と、資料に載せる項目を保存する。指定された項目だけを「載せる」にする */
+/**
+ * 相談先と、資料に載せる項目を保存する。指定された項目だけを「載せる」にする。
+ * purpose（相談の目的）は、渡されたときだけ書き換える
+ */
 export function setReportSettings(
   deps: Deps,
   sid: string,
   consultant: unknown,
   selectedIds: unknown,
+  rawPurpose?: unknown,
 ): Promise<SessionView> {
   return withLock(sid, async () => {
+    const purpose = rawPurpose === undefined ? null : cleanText(rawPurpose, MAX_PURPOSE);
     if (!CONSULTANT_KEYS.includes(consultant as ConsultantKey)) {
       throw new V2Error("no_consultant", "相談先を選んでください。");
     }
@@ -335,6 +346,7 @@ export function setReportSettings(
     }
     const chosen = new Set(selectedIds as string[]);
     session.consultant = consultant as ConsultantKey;
+    if (purpose !== null) session.purpose = purpose;
     for (const item of session.items) item.selected = chosen.has(item.id);
     session.report = null;
     return save(deps, session);

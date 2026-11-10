@@ -49,7 +49,7 @@ export async function dispatch(
     case "setOptions":
       return service.setOptions(deps, sid, body.options);
     case "setReportSettings":
-      return service.setReportSettings(deps, sid, body.consultant, body.selectedIds);
+      return service.setReportSettings(deps, sid, body.consultant, body.selectedIds, body.purpose);
     case "generateReport":
       return service.generateReport(deps, sid);
     case "reset":

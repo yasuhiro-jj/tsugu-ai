@@ -148,4 +148,10 @@ export const REPORT_NOTES: readonly string[] = [
   "実際にどの資料が必要かは、事前に相談先へ確認してください。見せるのは必要な範囲だけにします。",
 ];
 
+export const DEFAULT_PURPOSE = "飲食店の今後と引き継ぎの準備について、選択肢と進め方を相談したい。";
+
 export const MAX_TEXT = 1000;
+export const MAX_PURPOSE = 200;
+
+/** AI の返事の中で、本人の言葉を引用するときの長さの上限 */
+export const QUOTE_MAX = 40;

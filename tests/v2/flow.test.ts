@@ -46,6 +46,65 @@ describe("FUNC-01 後継者を登録せずに始め、質問を1つずつ進め�
   });
 });
 
+describe("AI の返事は本人の言葉をそのまま引用し、言い換えない", () => {
+  it("聞き返しの前に、本人の言葉を引用して受け止める", async () => {
+    const deps = createDeps();
+    await service.start(deps, SID_A);
+    const view = await service.answer(deps, SID_A, "常連さんとの関係を残したいです。");
+    const last = view.log.at(-1)!;
+    expect(last.who).toBe("ai");
+    expect(last.text).toBe(`「常連さんとの関係を残したいです」とお話しくださったのですね。${THEMES[0].followup}`);
+  });
+
+  it("次の質問へ進むときも、本人の言葉を受け止めてから1つだけ質問する", async () => {
+    const deps = createDeps();
+    await service.start(deps, SID_A);
+    await service.answer(deps, SID_A, "味を残したい");
+    const view = await service.answer(deps, SID_A, "仕込みを一緒にやりたい");
+    const last = view.log.at(-1)!;
+    expect(last.text).toContain("「仕込みを一緒にやりたい」とお話しくださったのですね。");
+    expect(last.text).toContain(THEMES[1].question);
+    expect(last.text.match(/？/g) ?? []).toHaveLength(1);
+  });
+
+  it("長い言葉は途中で切って引用し、内容を足さない", async () => {
+    const { echo } = await import("@/lib/v2/mock");
+    const long = "あ".repeat(100);
+    expect(echo(long)).toBe(`「${"あ".repeat(40)}…」とお話しくださったのですね。`);
+    expect(echo("  短い\n答え。 ")).toBe("「短い 答え」とお話しくださったのですね。");
+  });
+});
+
+describe("相談の目的は本人が書き直せて、作成日が入る", () => {
+  it("書き直した目的がそのまま資料に載り、古い資料は破棄される", async () => {
+    const deps = createDeps();
+    const view = await completeInterview(deps, SID_A);
+    await service.confirmReview(deps, SID_A);
+    const ids = [view.items[0].id];
+    await service.setReportSettings(deps, SID_A, "bank", ids);
+    const first = await service.generateReport(deps, SID_A);
+    expect(first.report!.purpose).toBe("飲食店の今後と引き継ぎの準備について、選択肢と進め方を相談したい。");
+    expect(first.report!.generatedAt).toBe("2026-11-10T00:00:00.000Z");
+
+    const changed = await service.setReportSettings(deps, SID_A, "bank", ids, "従業員に引き継ぐ場合の進め方を聞きたい。");
+    expect(changed.report).toBeNull();
+    const second = await service.generateReport(deps, SID_A);
+    expect(second.report!.purpose).toBe("従業員に引き継ぐ場合の進め方を聞きたい。");
+    expect(deps.generatorInputs.at(-1)!.purpose).toBe("従業員に引き継ぐ場合の進め方を聞きたい。");
+  });
+
+  it("空の目的・長すぎる目的は受け付けず、何も変わらない", async () => {
+    const deps = createDeps();
+    const view = await completeInterview(deps, SID_A);
+    const ids = [view.items[0].id];
+    await service.setReportSettings(deps, SID_A, "bank", ids);
+    const before = service.getView(deps, SID_A)!;
+    await expect(service.setReportSettings(deps, SID_A, "bank", ids, "  ")).rejects.toBeInstanceOf(V2Error);
+    await expect(service.setReportSettings(deps, SID_A, "bank", ids, "あ".repeat(201))).rejects.toBeInstanceOf(V2Error);
+    expect(service.getView(deps, SID_A)).toEqual(before);
+  });
+});
+
 describe("FUNC-02 回答を飛ばせて、不明は未確認として表示する", () => {
   it("飛ばしたテーマは「未確認」になり、発言や整理案は作られない", async () => {
     const deps = createDeps();

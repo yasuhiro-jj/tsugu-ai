@@ -61,6 +61,8 @@ export type Session = {
   reviewConfirmed: boolean;
   options: OptionKey[];
   consultant: ConsultantKey | null;
+  /** 相談の目的（本人が書き直せる。資料に載る） */
+  purpose: string;
   report: Report | null;
 };
 
@@ -70,6 +72,8 @@ export type SessionView = Omit<Session, "id">;
 /** 資料生成に渡す入力。本人が選んだ項目だけが入る */
 export type ReportInput = {
   consultantLabel: string;
+  /** 本人が確かめた「相談の目的」 */
+  purpose: string;
   items: { kind: ItemKind; theme: ThemeKey | null; text: string }[];
 };
 

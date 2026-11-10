@@ -95,16 +95,17 @@ export default function ReviewClient() {
                         </div>
                       </>
                     ) : (
-                      <>
+                      <div className="v2-item__row">
                         <p className="v2-item__text v2-pre">
                           {item.text}
                           {item.edited && <span className="badge v2-item__edited">ご本人が修正</span>}
                         </p>
-                        <div className="button-row">
+                        <div className="v2-item__actions">
                           <button
                             className="button button--secondary button--small"
                             type="button"
                             disabled={busy}
+                            aria-label={`直す：${item.text}`}
                             onClick={() => startEdit(item)}
                           >
                             直す
@@ -113,12 +114,13 @@ export default function ReviewClient() {
                             className="button button--secondary button--danger button--small"
                             type="button"
                             disabled={busy}
+                            aria-label={`候補から外す：${item.text}`}
                             onClick={() => void act("removeItem", { itemId: item.id })}
                           >
                             候補から外す
                           </button>
                         </div>
-                      </>
+                      </div>
                     )}
                   </li>
                 ))}

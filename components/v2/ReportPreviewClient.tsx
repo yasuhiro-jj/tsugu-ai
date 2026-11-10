@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 import { ErrorBox, Guide, Loading, Steps } from "./Shared";
 import { useV2Session } from "./use-session";
 
+/** 下書きを作った日を「2026年11月11日」の形にする（日本時間） */
+function formatDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "未設定";
+  return new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", dateStyle: "long" }).format(date);
+}
+
 function List({ title, items }: { title: string; items: string[] }) {
   if (items.length === 0) return null;
   return (
@@ -63,7 +70,7 @@ export default function ReportPreviewClient() {
           <dt>相談の目的</dt>
           <dd>{report.purpose}</dd>
           <dt>作成日</dt>
-          <dd>未設定（持っていく前に書き入れてください）</dd>
+          <dd>{formatDate(report.generatedAt)}（この下書きを作った日）</dd>
         </dl>
 
         <List title="経営者の思い・希望（ご本人の発言）" items={report.statements} />

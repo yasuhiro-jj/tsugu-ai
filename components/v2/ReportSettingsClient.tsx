@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { CONSULTANTS } from "@/lib/v2/content";
+import { CONSULTANTS, MAX_PURPOSE } from "@/lib/v2/content";
 import type { ConsultantKey, ItemKind } from "@/lib/v2/types";
 import { ErrorBox, Guide, KIND_LABELS, Loading, Steps } from "./Shared";
 import { useV2Session } from "./use-session";
@@ -14,12 +14,14 @@ export default function ReportSettingsClient() {
   const { session, loaded, busy, error, act } = useV2Session();
   const [consultant, setConsultant] = useState<ConsultantKey | "">("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [purpose, setPurpose] = useState("");
   const [ready, setReady] = useState(false);
 
   // 保存済みの選択を読み込む（初めてのときは、すべて未選択）
   useEffect(() => {
     if (!session || ready) return;
     setConsultant(session.consultant ?? "");
+    setPurpose(session.purpose);
     setSelected(session.items.filter((i) => i.selected).map((i) => i.id));
     setReady(true);
   }, [session, ready]);
@@ -52,7 +54,7 @@ export default function ReportSettingsClient() {
 
   async function make() {
     const ids = selected.filter((id) => session!.items.some((i) => i.id === id));
-    if (!(await act("setReportSettings", { consultant, selectedIds: ids }))) return;
+    if (!(await act("setReportSettings", { consultant, selectedIds: ids, purpose }))) return;
     if (await act("generateReport")) router.push("/v2/report/preview");
   }
 
@@ -85,6 +87,20 @@ export default function ReportSettingsClient() {
           ))}
         </select>
         <p className="muted">資料は自動では送られません。ご本人が確かめて、ご自分で持っていきます。</p>
+
+        <label className="chat__label" htmlFor="v2-purpose">
+          相談の目的（書き直せます）
+        </label>
+        <textarea
+          id="v2-purpose"
+          className="textarea"
+          rows={2}
+          maxLength={MAX_PURPOSE}
+          value={purpose}
+          disabled={busy}
+          onChange={(e) => setPurpose(e.target.value)}
+        />
+        <p className="muted">ここに書いた文章は、資料の「相談の目的」にそのまま載ります。</p>
       </section>
 
       {KINDS.map((kind) => {
@@ -119,7 +135,7 @@ export default function ReportSettingsClient() {
         <button
           className="button"
           type="button"
-          disabled={busy || consultant === "" || selected.length === 0}
+          disabled={busy || consultant === "" || selected.length === 0 || purpose.trim() === ""}
           onClick={() => void make()}
         >
           印をつけた項目で下書きを作る

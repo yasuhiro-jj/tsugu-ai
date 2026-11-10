@@ -1,5 +1,42 @@
 /* TSUGU AI 2.0（試作）だけで使うスタイル。既存の app/globals.css は変更しない。 */
 
+/* 2.0 の画面でだけ、ハッカソン版の上部メニューを隠す（.v2 があるページに限る） */
+body:has(.v2) .site-header {
+  display: none;
+}
+
+.v2-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  margin: 0 0 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--color-primary);
+}
+
+.v2-header__brand {
+  font-family: var(--font-serif);
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.v2-header__tag {
+  padding: 0 0.5rem;
+  border: 1px solid var(--color-accent);
+  border-radius: 999px;
+  color: var(--color-accent);
+  font-size: 0.8125rem;
+}
+
+.v2-header__lead {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
 .v2-banner {
   margin: 0 0 1.5rem;
   padding: 0.75rem 1rem;
@@ -78,12 +115,27 @@
 }
 
 .v2-item {
-  padding: 0.75rem 0;
+  padding: 0.5rem 0;
   border-top: 1px solid var(--color-border);
 }
 
+.v2-item__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
 .v2-item__text {
-  margin: 0 0 0.5rem;
+  flex: 1 1 18rem;
+  margin: 0;
+}
+
+.v2-item__actions {
+  display: flex;
+  flex: none;
+  gap: 0.5rem;
 }
 
 .v2-item__edited {
@@ -163,6 +215,7 @@
   .site-footer,
   .skip-link,
   .v2-banner,
+  .v2-header,
   .v2-no-print {
     display: none !important;
   }
