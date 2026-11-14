@@ -28,6 +28,7 @@ import {
   THEME_KEYS,
   themeDef,
 } from "./content";
+import { CHECK_VALUES, courseDef, isCourseId, MAX_NOTE } from "./courses";
 import { echo, safeQuestion } from "./echo";
 import { StoreFullError, type V2Store } from "./store";
 import {
@@ -35,6 +36,7 @@ import {
   type ConsultantKey,
   type InterviewAi,
   type Item,
+  type LearningEntry,
   type OptionKey,
   type PrepEntry,
   type PrepKey,
@@ -101,6 +103,7 @@ function fillPrep(session: Session): Session {
   session.prep ??= {} as Record<PrepKey, PrepEntry>;
   for (const key of PREP_KEYS) session.prep[key] ??= { ...EMPTY_PREP };
   session.steps ??= {};
+  session.learning ??= {};
   for (const key of THEME_KEYS) {
     const state = session.themes[key];
     state.answerIds ??= [];
@@ -254,6 +257,20 @@ export function start(deps: Deps, sid: string, owner?: Session["owner"]): Promis
       checkOwner(deps, existing);
       return toView(fillPrep(existing));
     }
+    return save(deps, create(deps, sid, owner));
+  }).catch(busyIfFull);
+}
+
+/** 保存先がいっぱいで新しく作れなかったときの返事 */
+function busyIfFull(e: unknown): never {
+  if (e instanceof StoreFullError) {
+    throw new V2Error("busy", "ただいま混み合っています。少し時間をおいて、もう一度お試しください。", 503);
+  }
+  throw e;
+}
+
+/** 新しい面談の入れ物を作り、最初の質問を用意する（保存はしない） */
+function create(deps: Deps, sid: string, owner?: Session["owner"]): Session {
     owner ??= deps.expectOwner;
     const now = deps.now();
     const themes = Object.fromEntries(
@@ -273,20 +290,66 @@ export function start(deps: Deps, sid: string, owner?: Session["owner"]): Promis
       prep: Object.fromEntries(PREP_KEYS.map((k) => [k, { ...EMPTY_PREP }])) as unknown as Record<PrepKey, PrepEntry>,
       options: [],
       steps: {},
+      learning: {},
       consultant: null,
       purpose: DEFAULT_PURPOSE,
       report: null,
     };
     advance(deps, session, `${INTRO}\n\n`);
-    try {
-      return save(deps, session);
-    } catch (e) {
-      if (e instanceof StoreFullError) {
-        throw new V2Error("busy", "ただいま混み合っています。少し時間をおいて、もう一度お試しください。", 503);
-      }
-      throw e;
+    return session;
+}
+
+/**
+ * 講座の学びの記録（確認問題の答え、自分のメモ、確認リスト）を保存する。
+ * 面談を始める前でも保存できる（講座から始める人のために、入れ物がなければ作る）。
+ * 本人用のメモで、相談資料には入れない。資料の下書きにも影響しない。
+ * 1つでも正しくない指定があれば、何も変えない
+ */
+export function saveLearning(deps: Deps, sid: string, courseId: unknown, raw: unknown): Promise<SessionView> {
+  return withLock(sid, async () => {
+    if (!isCourseId(courseId)) throw new V2Error("bad_input", "講座の指定が正しくありません。");
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new V2Error("bad_input", "学びの記録の指定が正しくありません。");
     }
-  });
+    const def = courseDef(courseId);
+    const input = raw as Record<string, unknown>;
+
+    const quiz = input.quiz === undefined ? null : input.quiz;
+    if (quiz !== null && quiz !== "yes" && quiz !== "no") {
+      throw new V2Error("bad_input", "学びの記録の指定が正しくありません。");
+    }
+    const entry: LearningEntry = { quiz, notes: {}, checks: {} };
+
+    const notes = input.notes ?? {};
+    if (notes === null || typeof notes !== "object" || Array.isArray(notes)) {
+      throw new V2Error("bad_input", "学びの記録の指定が正しくありません。");
+    }
+    for (const [key, value] of Object.entries(notes as Record<string, unknown>)) {
+      // その講座にある欄だけを受け付ける
+      if (!def.fields.some((f) => f.key === key)) throw new V2Error("bad_input", "学びの記録の指定が正しくありません。");
+      const text = cleanOptional(value, MAX_NOTE);
+      if (text !== "") entry.notes[key] = text;
+    }
+
+    const checks = input.checks ?? {};
+    if (checks === null || typeof checks !== "object" || Array.isArray(checks)) {
+      throw new V2Error("bad_input", "学びの記録の指定が正しくありません。");
+    }
+    for (const [key, value] of Object.entries(checks as Record<string, unknown>)) {
+      if (!def.checks.some((f) => f.key === key)) throw new V2Error("bad_input", "学びの記録の指定が正しくありません。");
+      if (value === null || value === undefined) continue;
+      if (!CHECK_VALUES.some((c) => c.key === value)) {
+        throw new V2Error("bad_input", "学びの記録の指定が正しくありません。");
+      }
+      entry.checks[key] = value as "yes" | "no" | "unknown";
+    }
+
+    const existing = deps.store.get(sid);
+    if (existing) checkOwner(deps, existing);
+    const session = existing ? fillPrep(existing) : create(deps, sid);
+    session.learning[courseId] = entry;
+    return save(deps, session);
+  }).catch(busyIfFull);
 }
 
 export function answer(deps: Deps, sid: string, rawText: unknown): Promise<SessionView> {

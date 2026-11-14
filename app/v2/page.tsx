@@ -39,6 +39,16 @@ export default function V2Home() {
           面談を始める
         </Link>
       </section>
+
+      <section className="card">
+        <h2 className="section-title">先に、短い講座で学ぶ</h2>
+        <p>
+          「何から考えればよいか分からない」というときは、5〜10分の講座から始められます。読んで、確認問題に答えて、自分のメモを書きます。面談の前でも後でも、いつでも開けます。
+        </p>
+        <Link className="button button--secondary" href="/v2/learn">
+          講座を見る
+        </Link>
+      </section>
     </>
   );
 }

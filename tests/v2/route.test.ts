@@ -150,6 +150,18 @@ describe("セッション ID の扱い", () => {
     expect(setCalls).toHaveLength(0);
   });
 
+  it("講座の記録の保存は、面談を始めていなくても受け付ける（入れ物を作り、クッキーを出す）", async () => {
+    const { POST, GET } = await load();
+    const res = await POST(post({ action: "saveLearning", courseId: "values", learning: { quiz: "no", notes: { kept: "架空のメモ" } } }));
+    expect(res.status).toBe(200);
+    expect(setCalls).toHaveLength(1);
+    const again = await (await GET()).json();
+    expect(again.session.learning.values.notes.kept).toBe("架空のメモ");
+    // ほかの操作は、入れ物がなければ断る（これまでどおり）
+    jar.clear();
+    expect((await POST(post({ action: "setPrep", prep: {} }))).status).toBe(409);
+  });
+
   it("「すべて消す」でクッキーも消え、内容は残らない", async () => {
     const { POST, GET } = await load();
     await POST(post({ action: "start" }));

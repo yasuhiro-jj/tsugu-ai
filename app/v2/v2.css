@@ -541,3 +541,64 @@ body:has(.v2) {
   border-top: 1px solid var(--v2-hairline);
   font-size: 0.9rem;
 }
+
+/* 見出し帯のメニュー */
+.v2-header__nav {
+  display: flex;
+  gap: 1rem;
+  margin-left: auto;
+  font-size: 0.9375rem;
+}
+
+/* 講座 */
+.v2-courses {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.v2 .v2-course-card {
+  margin-bottom: 0;
+}
+
+.v2-course-card__no {
+  margin: 0 0 0.25rem;
+  color: var(--v2-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.v2-course__sub {
+  margin: 1rem 0 0.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.v2-quiz {
+  margin: 0 0 0.75rem;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.v2-quiz legend {
+  padding: 0;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.v2-quiz__result {
+  margin: 0.75rem 0 0;
+  padding: 12px 16px;
+  border: 1px solid var(--v2-hairline);
+  border-radius: var(--v2-radius-cta);
+  background: var(--v2-canvas-soft);
+}
+
+.v2-quiz__result strong {
+  display: block;
+}

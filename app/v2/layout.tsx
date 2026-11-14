@@ -15,6 +15,10 @@ export default function V2Layout({ children }: { children: ReactNode }) {
         </Link>
         <span className="v2-header__tag">試作</span>
         <span className="v2-header__lead">後継者が決まっていない飲食店の、相談の準備</span>
+        <nav className="v2-header__nav" aria-label="2.0 のメニュー">
+          <Link href="/v2/interview">面談</Link>
+          <Link href="/v2/learn">講座</Link>
+        </nav>
       </div>
       <p className="v2-banner" role="note">
         <strong>TSUGU AI 2.0 の試作です。</strong>
