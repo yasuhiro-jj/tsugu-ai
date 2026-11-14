@@ -28,6 +28,7 @@ import {
   THEME_KEYS,
   themeDef,
 } from "./content";
+import { echo, safeQuestion } from "./echo";
 import type { V2Store } from "./store";
 import {
   V2Error,
@@ -95,7 +96,14 @@ function fillPrep(session: Session): Session {
   session.prep ??= {} as Record<PrepKey, PrepEntry>;
   for (const key of PREP_KEYS) session.prep[key] ??= { ...EMPTY_PREP };
   session.steps ??= {};
-  for (const key of THEME_KEYS) session.themes[key].answerIds ??= [];
+  for (const key of THEME_KEYS) {
+    const state = session.themes[key];
+    state.answerIds ??= [];
+    // 古い形で保存された回答には ID がない。並びがずれないよう、古い回答の位置を空の ID で埋める
+    // （ID は新しい回答ほど後ろに付くので、足りない分は前に入れる）
+    const missing = state.answers.length - state.answerIds.length;
+    if (missing > 0) state.answerIds = [...Array<string>(missing).fill(""), ...state.answerIds];
+  }
   return session;
 }
 
@@ -131,14 +139,7 @@ function advance(deps: Deps, session: Session, prefix: string): Turn | null {
   return null;
 }
 
-const MAX_HEARD = 200;
 
-/** AI が返した「受け止めの一文」を確かめる。文字でない・長すぎるものは使わない */
-function cleanHeard(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const text = value.trim();
-  return text !== "" && text.length <= MAX_HEARD ? text : null;
-}
 
 /** 準備リストの1分野を、資料に載せる1行の文章にする。本人が選んだ状態と書いた言葉だけを使う */
 export function prepText(key: PrepKey, entry: PrepEntry): string {
@@ -283,19 +284,21 @@ export function answer(deps: Deps, sid: string, rawText: unknown): Promise<Sessi
     state.answers = answers;
     state.answerIds = [...state.answerIds, answerId];
     session.log.push({ who: "me", theme: key, text, answerId });
-    // 受け止めの一文（本人の言葉の引用）は、質問とは別に持つ。その発言を消したら、引用も消せるように
-    const heard = cleanHeard(reply.heard);
+    // 受け止めの一文（本人の言葉の引用）は、AI に任せず、今回の回答だけから作る。
+    // 質問とは別に持ち、その発言を消したら引用も消せるようにする
+    const heard = echo(text);
     let aiTurn: Turn | null;
     // 聞き返しは1テーマ1回まで（AI の返事にかかわらず、ここで止める）
     if (reply.action === "followup" && !state.followupAsked) {
       state.followupAsked = true;
-      aiTurn = { who: "ai", theme: key, text: reply.reply.trim() };
+      // AI の聞き返しに本人の言葉が混ざっていたら使わず、決まった質問に戻す
+      aiTurn = { who: "ai", theme: key, text: safeQuestion(reply.reply, answers, themeDef(key).followup) };
       session.log.push(aiTurn);
     } else {
       state.status = "answered";
       aiTurn = advance(deps, session, "ありがとうございます。次の質問です。\n\n");
     }
-    if (aiTurn && heard) {
+    if (aiTurn) {
       aiTurn.heard = heard;
       aiTurn.heardOf = answerId;
     }
@@ -413,10 +416,19 @@ export function removeItem(deps: Deps, sid: string, itemId: unknown): Promise<Se
     requireReview(session);
     const item = findItem(session, itemId);
     rejectPrep(item);
-    session.items = session.items.filter((i) => i.id !== item.id);
-    if (item.kind === "statement" && item.answerId && item.theme) {
+    if (item.kind === "statement") {
+      // 古い形で保存された発言は、面談の記録のどこにあるかを確かめられない。
+      // 「記録からも消す」と言って消し残すことがないよう、個別には消さない
+      if (!item.answerId || !item.theme || !session.themes[item.theme].answerIds.includes(item.answerId)) {
+        throw new V2Error(
+          "cannot_forget",
+          "この発言は古い形で保存されているため、個別には消せません。消したいときは「すべて消す」を使ってください。",
+          409,
+        );
+      }
       forgetAnswer(deps, session, item.theme, item.answerId);
     }
+    session.items = session.items.filter((i) => i.id !== item.id);
     session.report = null;
     return save(deps, session);
   });
@@ -472,6 +484,8 @@ export function setPrep(deps: Deps, sid: string, raw: unknown): Promise<SessionV
         item.text = text;
         item.selected = false;
         item.id = deps.newId();
+        // 「次の一歩」のメモは、前の文章に対して選んだもの。文章が変わったら持ち越さない
+        delete session.steps[key];
       }
     }
     session.report = null;
@@ -572,6 +586,8 @@ export function setReportSettings(
       throw new V2Error("no_item", "その項目は見つかりませんでした。", 404);
     }
     const chosen = new Set(selectedIds as string[]);
+    // 相談先を変えたら、前の相談先に対する「次の一歩」のメモは持ち越さない
+    if (session.consultant !== consultant) delete session.steps.consult;
     session.consultant = consultant as ConsultantKey;
     if (purpose !== null) session.purpose = purpose;
     for (const item of session.items) item.selected = chosen.has(item.id);

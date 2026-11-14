@@ -21,7 +21,7 @@ export type Turn = {
   text: string;
   /** 本人の発言のとき：その回答の ID */
   answerId?: string;
-  /** AI の発言のとき：本人の言葉を引用して受け止めた一文（質問の前に表示する） */
+  /** AI の発言のとき：本人の言葉を引用して受け止めた一文（質問の前に表示する）。サーバーが今回の回答だけから作る */
   heard?: string;
   /** heard が引用している回答の ID（その発言を消したら、引用も消す） */
   heardOf?: string;
@@ -149,8 +149,6 @@ export type AiReply = {
   /** 聞き返しの質問（next_theme のときは短いあいさつ） */
   reply: string;
   action: "followup" | "next_theme";
-  /** 本人の言葉を引用して受け止めた一文（なくてもよい） */
-  heard?: string;
 };
 
 export type InterviewAi = (req: AiRequest) => Promise<AiReply>;

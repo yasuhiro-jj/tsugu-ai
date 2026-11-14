@@ -76,7 +76,7 @@ export default function OptionsClient() {
               <span className="v2-option__hold">
                 {o.hold
                   ? "確かめていないことがあるため、この道が合うかどうかの判断は保留です。"
-                  : "関係する分野は確認済みです。合うかどうかは、相談先と一緒に考えます。"}
+                  : "関係する分野は、ご本人の申告では確認済みです（TSUGU AI は資料を確かめていません）。合うかどうかは、相談先と一緒に考えます。"}
               </span>
             </label>
           );

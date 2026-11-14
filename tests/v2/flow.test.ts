@@ -70,7 +70,7 @@ describe("AI の返事は本人の言葉をそのまま引用し、言い換え�
   });
 
   it("長い言葉は途中で切って引用し、内容を足さない", async () => {
-    const { echo } = await import("@/lib/v2/mock");
+    const { echo } = await import("@/lib/v2/echo");
     const long = "あ".repeat(100);
     expect(echo(long)).toBe(`「${"あ".repeat(40)}…」とお話しくださったのですね。`);
     expect(echo("  短い\n答え。 ")).toBe("「短い 答え」とお話しくださったのですね。");
@@ -252,6 +252,111 @@ describe("発言を消すと、面談の記録からも消える", () => {
     expect(JSON.stringify((await service.generateReport(deps, SID_A)).report)).toContain(WORD);
     const after = await service.removeItem(deps, SID_A, view.items.find((i) => i.text === `${WORD}1`)!.id);
     expect(after.report).toBeNull();
+  });
+});
+
+describe("消し残しを作らない（AI の返事・古い形・飛ばす・同じ文章）", () => {
+  const WORD = "KESU-MEJIRUSHI-5521";
+
+  it("AI が前の回答を聞き返しに混ぜても、その文は使わず、決まった質問に戻す", async () => {
+    const deps = createDeps({
+      ai: async (req) => ({ reply: `さきほどの「${req.answers[0]}」について、もう少し教えてください？`, action: "followup" }),
+    });
+    await service.start(deps, SID_A);
+    const view = await service.answer(deps, SID_A, `${WORD}を大事にしたい`);
+    const last = view.log.at(-1)!;
+    expect(last.text).toBe(THEMES[0].followup);
+    const item = (await service.finishEarly(deps, SID_A)).items.find((i) => i.text.includes(WORD))!;
+    const after = await service.removeItem(deps, SID_A, item.id);
+    expect(JSON.stringify(after)).not.toContain(WORD);
+  });
+
+  it("引用は、AI の返事ではなく今回の回答だけから作る。長すぎる聞き返しは使わない", async () => {
+    const deps = createDeps({
+      ai: async () => ({ reply: "あ".repeat(301), action: "followup", heard: "勝手な文章" }) as never,
+    });
+    await service.start(deps, SID_A);
+    const view = await service.answer(deps, SID_A, "味を残したい");
+    const last = view.log.at(-1)!;
+    expect(last.heard).toBe("「味を残したい」とお話しくださったのですね。");
+    expect(last.text).toBe(THEMES[0].followup);
+    expect(JSON.stringify(view)).not.toContain("勝手な文章");
+  });
+
+  it("2つ目の答えを消しても、1つ目の答えとその引用は残る（消すのは選んだ発言だけ）", async () => {
+    const deps = createDeps();
+    await service.start(deps, SID_A);
+    await service.answer(deps, SID_A, "一つ目の答え");
+    await service.answer(deps, SID_A, `${WORD}二つ目`);
+    const view = await service.finishEarly(deps, SID_A);
+    const after = await service.removeItem(deps, SID_A, view.items.find((i) => i.text.includes(WORD))!.id);
+    expect(JSON.stringify(after)).not.toContain(WORD);
+    expect(after.themes.legacy.answers).toEqual(["一つ目の答え"]);
+    expect(after.log.some((t) => t.heard === "「一つ目の答え」とお話しくださったのですね。")).toBe(true);
+  });
+
+  it("同じ文章を2回答えても、消すのは選んだ1つだけ", async () => {
+    const deps = createDeps();
+    await service.start(deps, SID_A);
+    await service.answer(deps, SID_A, "同じ答え");
+    await service.answer(deps, SID_A, "同じ答え");
+    const view = await service.finishEarly(deps, SID_A);
+    const same = view.items.filter((i) => i.text === "同じ答え");
+    expect(same).toHaveLength(2);
+    const after = await service.removeItem(deps, SID_A, same[0].id);
+    expect(after.themes.legacy.answers).toEqual(["同じ答え"]);
+    expect(after.log.filter((t) => t.who === "me")).toHaveLength(1);
+    expect(after.log.filter((t) => t.heard).length).toBe(1);
+  });
+
+  it("飛ばしたテーマや途中で終えた面談でも、消したあとの状態が食い違わない", async () => {
+    const deps = createDeps();
+    await service.start(deps, SID_A);
+    await service.answer(deps, SID_A, `${WORD}だけ答えた`);
+    await service.skip(deps, SID_A); // 聞き返しは飛ばす
+    const view = await service.finishEarly(deps, SID_A);
+    const after = await service.removeItem(deps, SID_A, view.items.find((i) => i.text.includes(WORD))!.id);
+    expect(JSON.stringify(after)).not.toContain(WORD);
+    expect(after.themes.legacy.status).toBe("skipped");
+    const legacy = after.items.filter((i) => i.theme === "legacy");
+    expect(legacy.map((i) => i.kind)).toEqual(["unconfirmed"]);
+  });
+
+  it("古い形で保存された発言は、消し残さないよう、個別には消さない（すべて消すを案内）", async () => {
+    const deps = createDeps();
+    await service.start(deps, SID_A);
+    await service.answer(deps, SID_A, "古い答え");
+    // 古い形：回答に ID がなく、会話の記録にも ID がない
+    const raw = deps.store.get(SID_A)!;
+    delete (raw.themes.legacy as unknown as { answerIds?: unknown }).answerIds;
+    for (const turn of raw.log) {
+      delete turn.answerId;
+      delete turn.heardOf;
+    }
+    deps.store.put(raw);
+
+    await service.answer(deps, SID_A, "新しい答え");
+    const view = await service.finishEarly(deps, SID_A);
+    // 並びがずれない：新しい答えにだけ ID が付く
+    expect(view.themes.legacy.answers).toEqual(["古い答え", "新しい答え"]);
+    expect(view.themes.legacy.answerIds[0]).toBe("");
+    expect(view.themes.legacy.answerIds[1]).not.toBe("");
+    const oldItem = view.items.find((i) => i.text === "古い答え")!;
+    const newItem = view.items.find((i) => i.text === "新しい答え")!;
+    expect(oldItem.answerId).toBeUndefined();
+
+    const before = service.getView(deps, SID_A)!;
+    await expect(service.removeItem(deps, SID_A, oldItem.id)).rejects.toMatchObject({
+      code: "cannot_forget",
+      message: expect.stringContaining("すべて消す"),
+    });
+    expect(service.getView(deps, SID_A)).toEqual(before);
+
+    // 新しい形の発言は、これまでどおり消せて、古い答えは巻き込まれない
+    const after = await service.removeItem(deps, SID_A, newItem.id);
+    expect(JSON.stringify(after)).not.toContain("新しい答え");
+    expect(after.themes.legacy.answers).toEqual(["古い答え"]);
+    expect(after.log.some((t) => t.text === "古い答え")).toBe(true);
   });
 });
 
@@ -504,6 +609,28 @@ describe("次の一歩：やること・誰が・いつ頃を本人が選ぶ。�
       service.setNextSteps(deps, SID_A, { permits: { decision: "do" }, loans: { decision: "do", who: "あ".repeat(41) } }),
     ).rejects.toBeInstanceOf(V2Error);
     expect(service.getView(deps, SID_A)).toEqual(before);
+  });
+
+  it("準備リストの文章や相談先を変えたら、前のメモは持ち越さない", async () => {
+    const deps = createDeps();
+    await completeInterview(deps, SID_A);
+    await service.setPrep(deps, SID_A, { loans: { status: "todo", next: "返済予定表を探す" }, permits: { status: "unknown" } });
+    await service.setReportSettings(deps, SID_A, "bank", []);
+    await service.setNextSteps(deps, SID_A, {
+      loans: { decision: "do", who: "自分", when: "this_week" },
+      permits: { decision: "hold" },
+      consult: { decision: "do", who: "自分" },
+    });
+    // 借入の文章を変える。許認可は変えない
+    const changed = await service.setPrep(deps, SID_A, { loans: { status: "confirmed" }, permits: { status: "unknown" } });
+    expect(changed.steps.loans).toBeUndefined();
+    expect(changed.steps.permits).toEqual({ decision: "hold", who: "", when: null });
+    // 相談先を変える
+    const moved = await service.setReportSettings(deps, SID_A, "support_center", []);
+    expect(moved.steps.consult).toBeUndefined();
+    // 同じ相談先のままなら残る
+    await service.setNextSteps(deps, SID_A, { consult: { decision: "hold" } });
+    expect((await service.setReportSettings(deps, SID_A, "support_center", [])).steps.consult).toBeDefined();
   });
 
   it("面談を終える前は保存できない", async () => {
