@@ -53,7 +53,9 @@ describe("AI の返事は本人の言葉をそのまま引用し、言い換え�
     const view = await service.answer(deps, SID_A, "常連さんとの関係を残したいです。");
     const last = view.log.at(-1)!;
     expect(last.who).toBe("ai");
-    expect(last.text).toBe(`「常連さんとの関係を残したいです」とお話しくださったのですね。${THEMES[0].followup}`);
+    // 受け止めの一文（引用）と、質問は分けて持つ
+    expect(last.heard).toBe("「常連さんとの関係を残したいです」とお話しくださったのですね。");
+    expect(last.text).toBe(THEMES[0].followup);
   });
 
   it("次の質問へ進むときも、本人の言葉を受け止めてから1つだけ質問する", async () => {
@@ -62,7 +64,7 @@ describe("AI の返事は本人の言葉をそのまま引用し、言い換え�
     await service.answer(deps, SID_A, "味を残したい");
     const view = await service.answer(deps, SID_A, "仕込みを一緒にやりたい");
     const last = view.log.at(-1)!;
-    expect(last.text).toContain("「仕込みを一緒にやりたい」とお話しくださったのですね。");
+    expect(last.heard).toBe("「仕込みを一緒にやりたい」とお話しくださったのですね。");
     expect(last.text).toContain(THEMES[1].question);
     expect(last.text.match(/？/g) ?? []).toHaveLength(1);
   });
@@ -176,6 +178,120 @@ describe("FUNC-03 本人が要約を直せて、発言・整理案・未確認�
     await expect(service.editItem(deps, SID_A, id, "   ")).rejects.toBeInstanceOf(V2Error);
     await expect(service.editItem(deps, SID_A, id, "あ".repeat(1001))).rejects.toBeInstanceOf(V2Error);
     await expect(service.editItem(deps, SID_A, "no-such-id", "直す")).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("発言を消すと、面談の記録からも消える", () => {
+  const WORD = "KESU-MEJIRUSHI-5521";
+
+  it("回答の原文・会話の記録・AI が引用した一文のどこにも残らない", async () => {
+    const deps = createDeps();
+    const view = await completeInterview(deps, SID_A, (theme, round) =>
+      theme === "staff" && round === 1 ? `${WORD}のことです` : `${theme}の答え${round}`,
+    );
+    expect(JSON.stringify(view)).toContain(WORD);
+    const target = view.items.find((i) => i.text.includes(WORD))!;
+    const after = await service.removeItem(deps, SID_A, target.id);
+
+    expect(JSON.stringify(after)).not.toContain(WORD);
+    expect(JSON.stringify(deps.store.get(SID_A))).not.toContain(WORD);
+    // 同じテーマのもう1つの答えは残る
+    expect(after.themes.staff.answers).toEqual(["staffの答え2"]);
+    expect(after.themes.staff.answerIds).toHaveLength(1);
+    expect(after.themes.staff.status).toBe("answered");
+    // AI の質問そのものは残る（引用だけが消える）
+    expect(after.log.some((t) => t.who === "ai" && t.theme === "staff" && t.heard === undefined)).toBe(true);
+  });
+
+  it("そのテーマの答えが1つも残らなくなったら、未確認として残し、AI の整理案も消す", async () => {
+    const deps = createDeps();
+    const view = await completeInterview(deps, SID_A);
+    for (const item of view.items.filter((i) => i.kind === "statement" && i.theme === "work")) {
+      await service.removeItem(deps, SID_A, item.id);
+    }
+    const after = service.getView(deps, SID_A)!;
+    expect(after.themes.work.answers).toEqual([]);
+    expect(after.themes.work.status).toBe("skipped");
+    const work = after.items.filter((i) => i.theme === "work");
+    expect(work.map((i) => [i.kind, i.text])).toEqual([
+      ["unconfirmed", "「店の仕事と強み」については、答えが残っていません。"],
+    ]);
+    expect(work[0].selected).toBe(false);
+  });
+
+  it("本人が書き直した AI の整理案は、本人の言葉なので残す", async () => {
+    const deps = createDeps();
+    const view = await completeInterview(deps, SID_A);
+    const note = view.items.find((i) => i.kind === "ai_note" && i.theme === "work")!;
+    await service.editItem(deps, SID_A, note.id, "自分で書いたメモ");
+    for (const item of view.items.filter((i) => i.kind === "statement" && i.theme === "work")) {
+      await service.removeItem(deps, SID_A, item.id);
+    }
+    const after = service.getView(deps, SID_A)!;
+    expect(after.items.some((i) => i.text === "自分で書いたメモ")).toBe(true);
+  });
+
+  it("書き直した発言を消しても、もとの原文は残らない", async () => {
+    const deps = createDeps();
+    const view = await completeInterview(deps, SID_A, (theme, round) =>
+      theme === "money" && round === 2 ? WORD : `${theme}の答え${round}`,
+    );
+    const target = view.items.find((i) => i.text === WORD)!;
+    const edited = await service.editItem(deps, SID_A, target.id, "書き直した");
+    const rewritten = edited.items.find((i) => i.text === "書き直した")!;
+    const after = await service.removeItem(deps, SID_A, rewritten.id);
+    expect(JSON.stringify(after)).not.toContain(WORD);
+    expect(JSON.stringify(after)).not.toContain("書き直した");
+  });
+
+  it("消したあとは、古い資料も破棄される", async () => {
+    const deps = createDeps();
+    const view = await completeInterview(deps, SID_A, (theme, round) => (theme === "legacy" ? `${WORD}${round}` : `${theme}${round}`));
+    await service.confirmReview(deps, SID_A);
+    await service.setReportSettings(deps, SID_A, "bank", view.items.map((i) => i.id));
+    expect(JSON.stringify((await service.generateReport(deps, SID_A)).report)).toContain(WORD);
+    const after = await service.removeItem(deps, SID_A, view.items.find((i) => i.text === `${WORD}1`)!.id);
+    expect(after.report).toBeNull();
+  });
+});
+
+describe("選択肢：本人の状況に応じた確認事項を出す。合う・合わないは判断しない", () => {
+  it("はじめは、どの選択肢も「判断は保留」", async () => {
+    const { buildOptionGuides } = await import("@/lib/v2/option-guides");
+    const deps = createDeps();
+    const view = await completeInterview(deps, SID_A);
+    const guides = buildOptionGuides(view);
+    expect(guides.map((g) => g.key)).toEqual(["family", "employee", "third_party", "closure", "undecided"]);
+    expect(guides.every((g) => g.hold && g.pending.length > 0)).toBe(true);
+    expect(guides[0].pending.every((p) => p.state === "まだ確認していません")).toBe(true);
+  });
+
+  it("準備リストの状況がそのまま出る。確認済みの分野は、まだ確かめていないことから外れる", async () => {
+    const { buildOptionGuides } = await import("@/lib/v2/option-guides");
+    const deps = createDeps();
+    await completeInterview(deps, SID_A);
+    const view = await service.setPrep(deps, SID_A, {
+      loans: { status: "todo" },
+      contracts: { status: "confirmed" },
+      finance: { status: "unknown" },
+      advisors: { status: "confirmed" },
+    });
+    const guides = buildOptionGuides(view);
+    const family = guides.find((g) => g.key === "family")!;
+    expect(family.pending.map((p) => `${p.label}：${p.state}`)).toEqual(["借入・保証：要確認", "お金と経営の状況：不明"]);
+    expect(family.hold).toBe(true);
+    const undecided = guides.find((g) => g.key === "undecided")!;
+    expect(undecided.pending).toEqual([]);
+    expect(undecided.hold).toBe(false);
+  });
+
+  it("選択肢に順位や「おすすめ」を付けない", async () => {
+    const { buildOptionGuides } = await import("@/lib/v2/option-guides");
+    const deps = createDeps();
+    const view = await completeInterview(deps, SID_A);
+    const guides = buildOptionGuides(view);
+    expect(JSON.stringify(guides)).not.toMatch(/おすすめ|最適|向いています|べき|score|rank/);
+    expect(Object.keys(guides[0]).sort()).toEqual(["checks", "hold", "key", "label", "pending"]);
   });
 });
 

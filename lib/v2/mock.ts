@@ -20,9 +20,9 @@ export function echo(answer: string): string {
 export const mockInterviewAi: InterviewAi = async (req) => {
   const heard = echo(req.answers[req.answers.length - 1] ?? "");
   if (!req.followupAsked) {
-    return { reply: `${heard}${themeDef(req.theme).followup}`, action: "followup" };
+    return { reply: themeDef(req.theme).followup, action: "followup", heard };
   }
-  return { reply: heard, action: "next_theme" };
+  return { reply: "ありがとうございます。", action: "next_theme", heard };
 };
 
 /**

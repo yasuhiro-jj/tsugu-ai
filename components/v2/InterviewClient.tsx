@@ -62,6 +62,7 @@ export default function InterviewClient() {
           <div key={i} className={turn.who === "ai" ? "bubble-row bubble-row--ai" : "bubble-row bubble-row--me"}>
             <div className={turn.who === "ai" ? "bubble bubble--ai" : "bubble bubble--me"}>
               <span className="visually-hidden">{turn.who === "ai" ? "AI：" : "あなた："}</span>
+              {turn.heard && <span className="v2-pre v2-heard">{turn.heard}</span>}
               <span className="v2-pre">{turn.text}</span>
             </div>
           </div>
