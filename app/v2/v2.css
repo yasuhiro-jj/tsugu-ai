@@ -226,3 +226,279 @@ body:has(.v2) .site-header {
     padding: 0;
   }
 }
+
+/* ==========================================================================
+   共通デザイン基準（Cursor風エディトリアルUI）の適用。2.0 の画面でだけ効く。
+   - 既存の app/globals.css は変更しない。色などの変数を 2.0 の画面でだけ上書きする
+   - 影は使わず、背景色の差と 1px の線で区切る。見出しは太字にしない
+   - 基準の色のままでは文字が読みにくい組み合わせは、読みやすさを優先して調整した
+       主要ボタン：#f54e00 に白文字は 3.5:1 のため、#d04200（4.7:1）を使う
+       補助の文字：#807d72 は 3.8:1 のため、#6b685f（5.2:1）を使う
+       注意の文字：#cf2d56 は淡い背景で 4.5:1 を下回るため、#b3224a（5.7:1）を使う
+   - 本文は、年配の方にも読みやすいよう、基準の body 色ではなく ink（濃い色）を使う
+   - 書体は端末にあるものだけを使う（外部から書体を読み込まない）
+   ========================================================================== */
+
+body:has(.v2) {
+  /* 基準のトークン */
+  --v2-primary: #d04200;
+  --v2-primary-hover: #b83a00;
+  --v2-canvas: #f7f7f4;
+  --v2-canvas-soft: #fafaf7;
+  --v2-card: #ffffff;
+  --v2-surface-strong: #e6e5e0;
+  --v2-hairline: #e6e5e0;
+  --v2-hairline-strong: #cfcdc4;
+  --v2-ink: #26251e;
+  --v2-muted: #6b685f;
+  --v2-error: #b3224a;
+  --v2-error-soft: #fbeef1;
+  --v2-success: #1f8a65;
+  --v2-radius-cta: 8px;
+  --v2-radius-card: 12px;
+
+  /* 既存スタイルが参照する変数を、2.0 の画面でだけ置き換える */
+  --color-bg: var(--v2-canvas);
+  --color-surface: var(--v2-card);
+  --color-text: var(--v2-ink);
+  --color-muted: var(--v2-muted);
+  --color-border: var(--v2-hairline);
+  --color-primary: var(--v2-ink);
+  --color-primary-hover: #000000;
+  --color-accent: var(--v2-error);
+  --color-accent-soft: var(--v2-error-soft);
+  --color-ok-soft: var(--v2-canvas-soft);
+  --radius: var(--v2-radius-cta);
+  --shadow: none;
+  --font-sans: Inter, system-ui, "Helvetica Neue", Helvetica, Arial, "Hiragino Sans",
+    "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", Meiryo, sans-serif;
+  --font-serif: var(--font-sans);
+}
+
+/* 見出し：太字にしない。少しだけ字間を詰める */
+.v2 h1,
+.v2 h2,
+.v2 h3 {
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.v2 .page-title {
+  font-size: 1.625rem;
+  line-height: 1.35;
+  margin-bottom: 0.75rem;
+}
+
+/* カードの中の見出しは「部品の見出し」（18px・やや太め） */
+.v2 .section-title,
+.v2 .card h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  margin: 0 0 0.5rem;
+}
+
+/* カード：白、12px の角丸、1px の線、影なし */
+.v2 .card {
+  border-radius: var(--v2-radius-card);
+  box-shadow: none;
+  padding: 24px;
+}
+
+/* 主要ボタンだけオレンジ。ほかは白地に濃い文字と線 */
+.v2 .button {
+  border-radius: var(--v2-radius-cta);
+  font-weight: 500;
+}
+
+.v2 .button:not(.button--secondary) {
+  background: var(--v2-primary);
+  border-color: var(--v2-primary);
+  color: #ffffff;
+}
+
+.v2 .button:not(.button--secondary):hover {
+  background: var(--v2-primary-hover);
+  border-color: var(--v2-primary-hover);
+}
+
+.v2 .button--secondary {
+  background: var(--v2-card);
+  border-color: var(--v2-hairline-strong);
+  color: var(--v2-ink);
+}
+
+.v2 .button--secondary:hover {
+  background: var(--v2-canvas-soft);
+}
+
+.v2 .button--secondary.button--danger {
+  color: var(--v2-error);
+  border-color: var(--v2-error);
+}
+
+.v2 a:not(.button) {
+  color: var(--v2-ink);
+}
+
+/* 見出し帯：線は細く */
+.v2-header {
+  border-bottom: 1px solid var(--v2-hairline-strong);
+}
+
+.v2-header__brand {
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.v2-header__tag,
+.v2 .badge {
+  border: none;
+  background: var(--v2-surface-strong);
+  color: var(--v2-ink);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 2px 10px;
+}
+
+/* 「架空の情報だけ」の注意：枠は 1px、色は注意の色 */
+.v2-banner {
+  border: 1px solid var(--v2-error);
+  border-radius: var(--v2-radius-card);
+}
+
+.v2 .notice,
+.v2 .ai-note {
+  border-left: none;
+  border: 1px solid var(--v2-hairline);
+  border-radius: var(--v2-radius-cta);
+  background: var(--v2-canvas-soft);
+  padding: 12px 16px;
+}
+
+/* 進み具合：今の段だけ濃く */
+.v2-steps__num {
+  border-color: var(--v2-hairline-strong);
+  background: var(--v2-card);
+}
+
+/* 3つの区分は、左の線の種類で見分ける（色だけに頼らない） */
+.v2-kind--statement {
+  border-left: 3px solid var(--v2-ink);
+}
+
+.v2-kind--ai_note {
+  border-left: 3px dashed var(--v2-muted);
+}
+
+.v2-kind--unconfirmed {
+  border-left: 3px double var(--v2-error);
+}
+
+.v2-kind--prep,
+.v2-kind--option {
+  border-left: 3px dotted var(--v2-hairline-strong);
+}
+
+.v2-option--on {
+  border-color: var(--v2-ink);
+  box-shadow: none;
+  outline: 1px solid var(--v2-ink);
+}
+
+/* 入力欄：白、8px の角丸、44px 以上の高さ */
+.v2 .textarea,
+.v2 .select,
+.v2-input {
+  border: 1px solid var(--v2-hairline-strong);
+  border-radius: var(--v2-radius-cta);
+  background: #ffffff;
+  color: var(--v2-ink);
+}
+
+.v2-input {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 16px;
+  font: inherit;
+  font-size: 1rem;
+}
+
+.v2 a:focus-visible,
+.v2 button:focus-visible,
+.v2 input:focus-visible,
+.v2 textarea:focus-visible,
+.v2 select:focus-visible {
+  outline: 3px solid var(--v2-primary);
+  outline-offset: 2px;
+}
+
+/* 準備リスト */
+.v2-note {
+  margin: 0 0 1rem;
+}
+
+.v2-prep {
+  margin-inline: 0;
+  min-width: 0;
+}
+
+.v2-prep__legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin: 0 0 0.25rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.v2-prep__legend + * {
+  clear: both;
+}
+
+.v2-prep__what {
+  margin: 0;
+}
+
+.v2-prep__note {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+}
+
+.v2-prep__status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.v2-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0 0.875rem;
+  border: 1px solid var(--v2-hairline-strong);
+  border-radius: var(--v2-radius-cta);
+  background: var(--v2-card);
+  cursor: pointer;
+}
+
+.v2-radio:has(input:checked) {
+  border-color: var(--v2-ink);
+  outline: 1px solid var(--v2-ink);
+  font-weight: 600;
+}
+
+.v2-radio input {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.v2 .chat__label {
+  display: block;
+  margin: 0.75rem 0 0.25rem;
+  font-weight: 600;
+}

@@ -7,7 +7,7 @@ import type { ConsultantKey, ItemKind } from "@/lib/v2/types";
 import { ErrorBox, Guide, KIND_LABELS, Loading, Steps } from "./Shared";
 import { useV2Session } from "./use-session";
 
-const KINDS: ItemKind[] = ["statement", "ai_note", "option", "unconfirmed"];
+const KINDS: ItemKind[] = ["statement", "ai_note", "option", "prep", "unconfirmed"];
 
 export default function ReportSettingsClient() {
   const router = useRouter();
@@ -30,7 +30,7 @@ export default function ReportSettingsClient() {
   if (!session || session.phase !== "review") {
     return (
       <>
-        <Steps current={3} />
+        <Steps current={4} />
         <Guide href="/v2/interview" label="面談へ">
           先に面談を終えてください。
         </Guide>
@@ -40,7 +40,7 @@ export default function ReportSettingsClient() {
   if (!session.reviewConfirmed) {
     return (
       <>
-        <Steps current={3} />
+        <Steps current={4} />
         <Guide href="/v2/review" label="内容の確認へ">
           先に、整理した内容をご本人が確認してください。
         </Guide>
@@ -60,7 +60,7 @@ export default function ReportSettingsClient() {
 
   return (
     <>
-      <Steps current={3} />
+      <Steps current={4} />
       <h1 className="page-title">資料に載せる項目を選ぶ</h1>
       <p className="lead">
         相談先に持っていく資料の下書きを作ります。<strong>印をつけたものだけ</strong>が資料に入ります。印のないものは、資料づくりにも使いません。内容を直した項目は、印が外れます。

@@ -1,7 +1,7 @@
 // 2.0 試作の機能テスト（Notion「04」の FUNC-01〜06）。架空のデータだけを使う。
 
 import { describe, expect, it } from "vitest";
-import { THEMES } from "@/lib/v2/content";
+import { PREP_AREAS, THEMES } from "@/lib/v2/content";
 import * as service from "@/lib/v2/service";
 import { V2Error } from "@/lib/v2/types";
 import { completeInterview, createDeps, SID_A } from "./helpers";
@@ -131,14 +131,15 @@ describe("FUNC-02 回答を飛ばせて、不明は未確認として表示す�
     expect(view.items.filter((i) => i.kind === "ai_note")).toHaveLength(0);
   });
 
-  it("資料で確かめていない事柄（借入・賃貸・許認可・雇用）は、答えても未確認のまま残る", async () => {
+  it("準備リストは、面談でどう答えても、はじめは全分野が「まだ確認していません」", async () => {
     const deps = createDeps();
     const view = await completeInterview(deps, SID_A);
-    const texts = view.items.filter((i) => i.kind === "unconfirmed").map((i) => i.text);
-    expect(texts.some((t) => t.includes("借入"))).toBe(true);
-    expect(texts.some((t) => t.includes("賃貸"))).toBe(true);
-    expect(texts.some((t) => t.includes("許認可"))).toBe(true);
-    expect(texts.some((t) => t.includes("雇用条件"))).toBe(true);
+    const prep = view.items.filter((i) => i.kind === "prep");
+    expect(prep).toHaveLength(PREP_AREAS.length);
+    expect(prep.every((i) => i.text.endsWith("：まだ確認していません"))).toBe(true);
+    expect(prep.every((i) => i.selected === false && i.theme === null)).toBe(true);
+    expect(prep.some((i) => i.text.startsWith("借入・保証："))).toBe(true);
+    expect(Object.values(view.prep).every((e) => e.status === null)).toBe(true);
   });
 });
 
@@ -173,6 +174,80 @@ describe("FUNC-03 本人が要約を直せて、発言・整理案・未確認�
     await expect(service.editItem(deps, SID_A, id, "   ")).rejects.toBeInstanceOf(V2Error);
     await expect(service.editItem(deps, SID_A, id, "あ".repeat(1001))).rejects.toBeInstanceOf(V2Error);
     await expect(service.editItem(deps, SID_A, "no-such-id", "直す")).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("準備リスト：確認済み／要確認／不明と、次に確認することを整理できる", () => {
+  it("状態と次に確認することを保存でき、資料用の1行になる", async () => {
+    const deps = createDeps();
+    await completeInterview(deps, SID_A);
+    const view = await service.setPrep(deps, SID_A, {
+      loans: { status: "todo", next: "返済予定表を探す" },
+      permits: { status: "unknown" },
+      values: { status: "confirmed", basis: "店の案内（架空・昨年版）" },
+      daily: { status: "confirmed" },
+    });
+    const text = (key: string) => view.items.find((i) => i.prepKey === key)!.text;
+    expect(text("loans")).toBe("借入・保証：要確認／次に確認すること：返済予定表を探す");
+    expect(text("permits")).toBe("許認可・衛生：不明");
+    expect(text("values")).toBe("店の思いと強み：確認済み（ご本人の申告。確かめた資料・時点：店の案内（架空・昨年版））");
+    // 何で確かめたかを書いていない「確認済み」は、その旨を示す（確かめた事実のように見せない）
+    expect(text("daily")).toBe("毎日の仕事：確認済み（ご本人の申告。資料名・時点は未記入）");
+    // 触っていない分野は、そのまま
+    expect(text("finance")).toBe("お金と経営の状況：まだ確認していません");
+    expect(view.prep.loans).toEqual({ status: "todo", next: "返済予定表を探す", basis: "" });
+  });
+
+  it("「不明」や未選択を、ゼロや問題なしに変えない", async () => {
+    const deps = createDeps();
+    await completeInterview(deps, SID_A);
+    const view = await service.setPrep(deps, SID_A, { finance: { status: "unknown" } });
+    for (const item of view.items.filter((i) => i.kind === "prep")) {
+      expect(item.text).not.toMatch(/問題なし|問題ありません|0円|ゼロ|なし$/);
+    }
+  });
+
+  it("内容が変わった分野は「載せる」が外れ、変わっていない分野はそのまま", async () => {
+    const deps = createDeps();
+    const done = await completeInterview(deps, SID_A);
+    await service.confirmReview(deps, SID_A);
+    const ids = done.items.filter((i) => i.prepKey === "loans" || i.prepKey === "permits").map((i) => i.id);
+    await service.setReportSettings(deps, SID_A, "bank", ids);
+    const view = await service.setPrep(deps, SID_A, { loans: { status: "todo" }, permits: { status: null } });
+    expect(view.items.find((i) => i.prepKey === "loans")!.selected).toBe(false);
+    expect(view.items.find((i) => i.prepKey === "permits")!.selected).toBe(true);
+    expect(view.report).toBeNull();
+  });
+
+  it("正しくない指定が1つでもあれば、何も変わらない", async () => {
+    const deps = createDeps();
+    await completeInterview(deps, SID_A);
+    const before = service.getView(deps, SID_A)!;
+    await expect(
+      service.setPrep(deps, SID_A, { loans: { status: "todo" }, nothing: { status: "todo" } }),
+    ).rejects.toBeInstanceOf(V2Error);
+    await expect(service.setPrep(deps, SID_A, { loans: { status: "ok" } })).rejects.toBeInstanceOf(V2Error);
+    await expect(
+      service.setPrep(deps, SID_A, { loans: { status: "todo", next: "あ".repeat(201) } }),
+    ).rejects.toBeInstanceOf(V2Error);
+    await expect(service.setPrep(deps, SID_A, [])).rejects.toBeInstanceOf(V2Error);
+    expect(service.getView(deps, SID_A)).toEqual(before);
+  });
+
+  it("準備リストの項目は、内容の確認の画面からは直せない・外せない", async () => {
+    const deps = createDeps();
+    const view = await completeInterview(deps, SID_A);
+    const prep = view.items.find((i) => i.kind === "prep")!;
+    await expect(service.editItem(deps, SID_A, prep.id, "確認済み")).rejects.toBeInstanceOf(V2Error);
+    await expect(service.removeItem(deps, SID_A, prep.id)).rejects.toBeInstanceOf(V2Error);
+  });
+
+  it("面談を終える前は保存できない", async () => {
+    const deps = createDeps();
+    await service.start(deps, SID_A);
+    await expect(service.setPrep(deps, SID_A, { loans: { status: "todo" } })).rejects.toMatchObject({
+      code: "not_in_review",
+    });
   });
 });
 

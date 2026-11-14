@@ -37,7 +37,7 @@ export default function ReviewClient() {
   }
 
   async function confirm() {
-    if (await act("confirmReview")) router.push("/v2/options");
+    if (await act("confirmReview")) router.push("/v2/prep");
   }
 
   return (

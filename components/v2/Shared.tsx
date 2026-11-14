@@ -9,6 +9,7 @@ export const KIND_LABELS: Record<ItemKind, string> = {
   ai_note: "AIの整理案",
   unconfirmed: "未確認",
   option: "関心のある選択肢",
+  prep: "準備の状況",
 };
 
 export const KIND_HELP: Record<ItemKind, string> = {
@@ -16,11 +17,13 @@ export const KIND_HELP: Record<ItemKind, string> = {
   ai_note: "AIがまとめた案です。事実とは限りません。違っていたら直すか、候補から外してください。",
   unconfirmed: "まだ確かめていないことです。「問題なし」という意味ではありません。",
   option: "知りたい選択肢です。決めたわけではありません。",
+  prep: "準備リストでご本人が整理した状況です。",
 };
 
 const STEPS = [
   { href: "/v2/interview", label: "面談" },
   { href: "/v2/review", label: "内容の確認" },
+  { href: "/v2/prep", label: "準備リスト" },
   { href: "/v2/options", label: "選択肢" },
   { href: "/v2/report", label: "資料に載せる項目" },
   { href: "/v2/report/preview", label: "資料の下書き" },

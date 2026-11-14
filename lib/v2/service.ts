@@ -11,12 +11,17 @@ import {
   CONSULTANT_KEYS,
   CONSULTANTS,
   DEFAULT_PURPOSE,
-  FIXED_UNCONFIRMED,
   INTRO,
+  MAX_PREP_TEXT,
   MAX_PURPOSE,
   MAX_TEXT,
   OPTION_KEYS,
   OPTIONS,
+  PREP_AREAS,
+  PREP_KEYS,
+  PREP_NOT_YET,
+  PREP_STATUS_KEYS,
+  PREP_STATUSES,
   THEME_KEYS,
   themeDef,
 } from "./content";
@@ -27,6 +32,9 @@ import {
   type InterviewAi,
   type Item,
   type OptionKey,
+  type PrepEntry,
+  type PrepKey,
+  type PrepStatus,
   type ReportGenerator,
   type ReportInput,
   type Session,
@@ -103,6 +111,35 @@ function advance(deps: Deps, session: Session, prefix: string) {
   session.items = buildReviewItems(session.themes, deps.newId);
 }
 
+const EMPTY_PREP: PrepEntry = { status: null, next: "", basis: "" };
+
+/** 準備リストの1分野を、資料に載せる1行の文章にする。本人が選んだ状態と書いた言葉だけを使う */
+export function prepText(key: PrepKey, entry: PrepEntry): string {
+  const label = PREP_AREAS.find((a) => a.key === key)!.label;
+  let state: string;
+  if (entry.status === null) {
+    state = PREP_NOT_YET;
+  } else if (entry.status === "confirmed") {
+    // 「確認済み」はご本人の申告。何で確かめたかを添え、書かれていなければその旨を示す
+    state = entry.basis
+      ? `確認済み（ご本人の申告。確かめた資料・時点：${entry.basis}）`
+      : "確認済み（ご本人の申告。資料名・時点は未記入）";
+  } else {
+    state = PREP_STATUSES.find((s) => s.key === entry.status)!.label;
+  }
+  return entry.next ? `${label}：${state}／次に確認すること：${entry.next}` : `${label}：${state}`;
+}
+
+/** 空でもよい短い文章を整える（制御文字を除く）。長すぎはエラー */
+function cleanOptional(value: unknown, max: number): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") throw new V2Error("bad_input", "文字を入力してください。");
+  // eslint-disable-next-line no-control-regex
+  const text = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim();
+  if (text.length > max) throw new V2Error("bad_input", `${max}文字以内で入力してください。`);
+  return text;
+}
+
 /**
  * 本人確認用の整理案を作る（決まった処理。AI は使わない）。
  * - 本人の発言：入力した文章をそのまま
@@ -124,8 +161,19 @@ export function buildReviewItems(themes: Record<ThemeKey, ThemeState>, newId: ()
       add("unconfirmed", key, `「${def.label}」については、面談で答えていません。`);
     }
   }
-  // テーマには結びつけない（これを選んでも、ほかのテーマの質問が資料に足されないように）
-  for (const text of FIXED_UNCONFIRMED) add("unconfirmed", null, text);
+  // 準備リスト：はじめはどの分野も「まだ確認していません」。
+  // テーマには結びつけない（これを選んでも、面談のテーマの質問が資料に足されないように）
+  for (const area of PREP_AREAS) {
+    items.push({
+      id: newId(),
+      kind: "prep",
+      theme: null,
+      prepKey: area.key,
+      text: prepText(area.key, EMPTY_PREP),
+      edited: false,
+      selected: false,
+    });
+  }
   return items;
 }
 
@@ -166,6 +214,7 @@ export function start(deps: Deps, sid: string): Promise<SessionView> {
       log: [],
       items: [],
       reviewConfirmed: false,
+      prep: Object.fromEntries(PREP_KEYS.map((k) => [k, { ...EMPTY_PREP }])) as unknown as Record<PrepKey, PrepEntry>,
       options: [],
       consultant: null,
       purpose: DEFAULT_PURPOSE,
@@ -255,6 +304,13 @@ function findItem(session: Session, itemId: unknown): Item {
   return item;
 }
 
+/** 準備リストの項目は、準備リストの画面でだけ変えられる（文章と状態が食い違わないように） */
+function rejectPrep(item: Item) {
+  if (item.kind === "prep") {
+    throw new V2Error("bad_input", "準備リストの項目は、準備リストの画面で直してください。");
+  }
+}
+
 /** 整理案を本人が書き直す。資料の下書きは古くなるので破棄する */
 export function editItem(deps: Deps, sid: string, itemId: unknown, rawText: unknown): Promise<SessionView> {
   return withLock(sid, async () => {
@@ -262,6 +318,7 @@ export function editItem(deps: Deps, sid: string, itemId: unknown, rawText: unkn
     const session = load(deps, sid);
     requireReview(session);
     const item = findItem(session, itemId);
+    rejectPrep(item);
     item.text = text;
     item.edited = true;
     // 書き直した内容は、もう一度本人が「載せる」を選ぶまで資料に入れない
@@ -276,6 +333,7 @@ export function removeItem(deps: Deps, sid: string, itemId: unknown): Promise<Se
     const session = load(deps, sid);
     requireReview(session);
     const item = findItem(session, itemId);
+    rejectPrep(item);
     session.items = session.items.filter((i) => i.id !== item.id);
     session.report = null;
     return save(deps, session);
@@ -287,6 +345,52 @@ export function confirmReview(deps: Deps, sid: string): Promise<SessionView> {
     const session = load(deps, sid);
     requireReview(session);
     session.reviewConfirmed = true;
+    return save(deps, session);
+  });
+}
+
+/**
+ * 準備リストを保存する。渡された分野だけを書き換える。
+ * 文章が変わった分野は「載せる」を外す（本人が選び直すまで資料に入れない）。
+ * 1つでも正しくない指定があれば、何も変えない
+ */
+export function setPrep(deps: Deps, sid: string, raw: unknown): Promise<SessionView> {
+  return withLock(sid, async () => {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new V2Error("bad_input", "準備リストの指定が正しくありません。");
+    }
+    const updates = new Map<PrepKey, PrepEntry>();
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (!PREP_KEYS.includes(key as PrepKey) || value === null || typeof value !== "object") {
+        throw new V2Error("bad_input", "準備リストの指定が正しくありません。");
+      }
+      const v = value as Record<string, unknown>;
+      const status = v.status === null || v.status === undefined ? null : v.status;
+      if (status !== null && !PREP_STATUS_KEYS.includes(status as PrepStatus)) {
+        throw new V2Error("bad_input", "準備リストの指定が正しくありません。");
+      }
+      updates.set(key as PrepKey, {
+        status: status as PrepStatus | null,
+        next: cleanOptional(v.next, MAX_PREP_TEXT),
+        // 「何で確かめたか」は確認済みのときだけ持つ
+        basis: status === "confirmed" ? cleanOptional(v.basis, MAX_PREP_TEXT) : "",
+      });
+    }
+
+    const session = load(deps, sid);
+    requireReview(session);
+    for (const [key, entry] of updates) {
+      session.prep[key] = entry;
+      const text = prepText(key, entry);
+      const item = session.items.find((i) => i.kind === "prep" && i.prepKey === key);
+      if (!item) {
+        session.items.push({ id: deps.newId(), kind: "prep", theme: null, prepKey: key, text, edited: false, selected: false });
+      } else if (item.text !== text) {
+        item.text = text;
+        item.selected = false;
+      }
+    }
+    session.report = null;
     return save(deps, session);
   });
 }

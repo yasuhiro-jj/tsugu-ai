@@ -12,6 +12,7 @@ export const ACTIONS = [
   "editItem",
   "removeItem",
   "confirmReview",
+  "setPrep",
   "setOptions",
   "setReportSettings",
   "generateReport",
@@ -46,6 +47,8 @@ export async function dispatch(
       return service.removeItem(deps, sid, body.itemId);
     case "confirmReview":
       return service.confirmReview(deps, sid);
+    case "setPrep":
+      return service.setPrep(deps, sid, body.prep);
     case "setOptions":
       return service.setOptions(deps, sid, body.options);
     case "setReportSettings":

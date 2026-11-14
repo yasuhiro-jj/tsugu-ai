@@ -21,7 +21,7 @@ export default function OptionsClient() {
   if (!session || session.phase !== "review") {
     return (
       <>
-        <Steps current={2} />
+        <Steps current={3} />
         <Guide href="/v2/interview" label="面談へ">
           先に面談を終えてください。
         </Guide>
@@ -39,7 +39,7 @@ export default function OptionsClient() {
 
   return (
     <>
-      <Steps current={2} />
+      <Steps current={3} />
       <h1 className="page-title">これからの選択肢</h1>
       <p className="lead">
         ここで決める必要はありません。知りたいものにいくつでも印をつけてください。どれも選ばずに進むこともできます。あとで変えられます。

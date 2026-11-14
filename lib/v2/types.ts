@@ -15,13 +15,40 @@ export type ThemeState = {
 
 export type Turn = { who: "ai" | "me"; theme: ThemeKey; text: string };
 
-/** statement=本人の発言 / ai_note=AIの整理案 / unconfirmed=未確認 / option=関心のある選択肢 */
-export type ItemKind = "statement" | "ai_note" | "unconfirmed" | "option";
+/** 準備リストの分野 */
+export type PrepKey =
+  | "values"
+  | "daily"
+  | "craft"
+  | "finance"
+  | "loans"
+  | "contracts"
+  | "staff"
+  | "partners"
+  | "permits"
+  | "systems"
+  | "advisors";
+
+export type PrepStatus = "confirmed" | "todo" | "unknown";
+
+export type PrepEntry = {
+  /** null は「まだ確認していない」。確認済みや問題なしとは扱わない */
+  status: PrepStatus | null;
+  /** 次に確認すること */
+  next: string;
+  /** 確認済みのとき：何で確かめたか（資料名・いつ時点） */
+  basis: string;
+};
+
+/** statement=本人の発言 / ai_note=AIの整理案 / unconfirmed=未確認 / option=関心のある選択肢 / prep=準備の状況 */
+export type ItemKind = "statement" | "ai_note" | "unconfirmed" | "option" | "prep";
 
 export type Item = {
   id: string;
   kind: ItemKind;
   theme: ThemeKey | null;
+  /** 準備リストの項目のとき、その分野 */
+  prepKey?: PrepKey;
   text: string;
   /** 本人が書き直したか */
   edited: boolean;
@@ -39,6 +66,8 @@ export type Report = {
   statements: string[];
   aiNotes: string[];
   optionsNote: string | null;
+  /** 準備の状況（本人が載せると選んだ分野だけ） */
+  prep: string[];
   unconfirmed: string[];
   questions: string[];
   documents: string[];
@@ -59,6 +88,7 @@ export type Session = {
   log: Turn[];
   items: Item[];
   reviewConfirmed: boolean;
+  prep: Record<PrepKey, PrepEntry>;
   options: OptionKey[];
   consultant: ConsultantKey | null;
   /** 相談の目的（本人が書き直せる。資料に載る） */

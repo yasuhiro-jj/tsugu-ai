@@ -45,7 +45,9 @@ describe("FUNC-04／SEC-03 選ばなかった項目は、資料生成の入力�
     const current = service.getView(deps, SID_A)!;
 
     // 選ばない：money テーマのすべての項目と、選択肢の項目
-    const chosen = current.items.filter((i) => i.theme !== "money" && i.kind !== "option").map((i) => i.id);
+    const chosen = current.items
+      .filter((i) => i.theme !== "money" && i.kind !== "option" && i.kind !== "prep")
+      .map((i) => i.id);
     await service.setReportSettings(deps, SID_A, "support_center", chosen);
     const done = await service.generateReport(deps, SID_A);
 
@@ -125,11 +127,34 @@ describe("FUNC-04／SEC-03 選ばなかった項目は、資料生成の入力�
     expect(JSON.stringify(deps.generatorInputs)).not.toContain(SECRET);
   });
 
-  it("資料で未確認の固定項目だけを選んでも、ほかのテーマの質問は足されない", async () => {
+  it("準備リストは、載せると選んだ分野だけが資料に入る（書いた言葉も含めて）", async () => {
+    const logs = spyConsole();
+    const deps = createDeps();
+    await completeInterview(deps, SID_A);
+    await service.confirmReview(deps, SID_A);
+    const view = await service.setPrep(deps, SID_A, {
+      loans: { status: "todo", next: `${SECRET}を確かめる` },
+      contracts: { status: "confirmed", basis: SECRET },
+      permits: { status: "unknown", next: `${PUBLIC}に聞く` },
+    });
+    const permits = view.items.find((i) => i.prepKey === "permits")!;
+    await service.setReportSettings(deps, SID_A, "bank", [permits.id]);
+    const done = await service.generateReport(deps, SID_A);
+
+    expect(done.report!.prep).toEqual([`許認可・衛生：不明／次に確認すること：${PUBLIC}に聞く`]);
+    expect(JSON.stringify(done.report)).not.toContain(SECRET);
+    expect(JSON.stringify(done.report)).not.toContain("借入・保証");
+    expect(JSON.stringify(deps.generatorInputs)).not.toContain(SECRET);
+    expect(deps.generatorInputs[0].items).toHaveLength(1);
+    expect(JSON.stringify(logs)).not.toContain(SECRET);
+    expect(JSON.stringify(logs)).not.toContain(PUBLIC);
+  });
+
+  it("準備リストの分野だけを選んでも、ほかのテーマの質問は足されない", async () => {
     const deps = createDeps();
     const view = await completeInterview(deps, SID_A);
     await service.confirmReview(deps, SID_A);
-    const fixed = view.items.find((i) => i.text.includes("雇用条件"))!;
+    const fixed = view.items.find((i) => i.prepKey === "staff")!;
     expect(fixed.theme).toBeNull();
     await service.setReportSettings(deps, SID_A, "bank", [fixed.id]);
     const done = await service.generateReport(deps, SID_A);
