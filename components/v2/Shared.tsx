@@ -27,6 +27,7 @@ const STEPS = [
   { href: "/v2/options", label: "選択肢" },
   { href: "/v2/report", label: "資料に載せる項目" },
   { href: "/v2/report/preview", label: "資料の下書き" },
+  { href: "/v2/next", label: "次の一歩" },
 ];
 
 export function Steps({ current }: { current: number }) {

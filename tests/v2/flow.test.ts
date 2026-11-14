@@ -322,6 +322,83 @@ describe("準備リスト：確認済み／要確認／不明と、次に確認�
   });
 });
 
+describe("次の一歩：やること・誰が・いつ頃を本人が選ぶ。保留もできる", () => {
+  it("候補は、準備リストで選んだ状態・書いた言葉と、選んだ相談先だけから作る", async () => {
+    const { buildNextSteps } = await import("@/lib/v2/next-steps");
+    const deps = createDeps();
+    const done = await completeInterview(deps, SID_A);
+    // 何も整理していないうちは、候補はない（AI が勝手にやることを作らない）
+    expect(buildNextSteps(done)).toEqual([]);
+
+    await service.setPrep(deps, SID_A, {
+      loans: { status: "todo", next: "返済予定表を探す" },
+      permits: { status: "unknown" },
+      values: { status: "confirmed" },
+      daily: { status: "confirmed", next: "手順をメモにする" },
+    });
+    await service.setReportSettings(deps, SID_A, "bank", []);
+    const steps = buildNextSteps(service.getView(deps, SID_A)!);
+    expect(steps.map((s) => [s.key, s.text])).toEqual([
+      ["consult", "取引のある金融機関に連絡して、相談の日を決める"],
+      ["daily", "手順をメモにする"],
+      ["loans", "返済予定表を探す"],
+      ["permits", "許認可・衛生の状況を確かめる"],
+    ]);
+    expect(steps.every((s) => s.decision === null && s.who === "" && s.when === null)).toBe(true);
+  });
+
+  it("相談先が「まだ決めていない」なら、連絡の候補は出さない", async () => {
+    const { buildNextSteps } = await import("@/lib/v2/next-steps");
+    const deps = createDeps();
+    await completeInterview(deps, SID_A);
+    await service.setReportSettings(deps, SID_A, "undecided", []);
+    expect(buildNextSteps(service.getView(deps, SID_A)!)).toEqual([]);
+  });
+
+  it("やる・今は保留を選べる。誰が・いつ頃は、やると決めたときだけ残る", async () => {
+    const deps = createDeps();
+    await completeInterview(deps, SID_A);
+    const view = await service.setNextSteps(deps, SID_A, {
+      loans: { decision: "do", who: "自分", when: "this_month" },
+      permits: { decision: "hold", who: "税理士", when: "this_week" },
+      consult: { decision: null },
+    });
+    expect(view.steps.loans).toEqual({ decision: "do", who: "自分", when: "this_month" });
+    expect(view.steps.permits).toEqual({ decision: "hold", who: "", when: null });
+    expect(view.steps.consult).toEqual({ decision: null, who: "", when: null });
+  });
+
+  it("正しくない指定が1つでもあれば、何も変わらない", async () => {
+    const deps = createDeps();
+    await completeInterview(deps, SID_A);
+    const before = service.getView(deps, SID_A)!;
+    for (const bad of [
+      '{"loans":{"decision":"must"}}',
+      '{"loans":{"decision":"do","when":"tomorrow"}}',
+      '{"loans":{"decision":"do","who":123}}',
+      '{"nothing":{"decision":"do"}}',
+      '{"__proto__":{"decision":"do"}}',
+      '{"loans":[]}',
+      "[]",
+      "null",
+    ]) {
+      await expect(service.setNextSteps(deps, SID_A, JSON.parse(bad)), bad).rejects.toBeInstanceOf(V2Error);
+    }
+    await expect(
+      service.setNextSteps(deps, SID_A, { permits: { decision: "do" }, loans: { decision: "do", who: "あ".repeat(41) } }),
+    ).rejects.toBeInstanceOf(V2Error);
+    expect(service.getView(deps, SID_A)).toEqual(before);
+  });
+
+  it("面談を終える前は保存できない", async () => {
+    const deps = createDeps();
+    await service.start(deps, SID_A);
+    await expect(service.setNextSteps(deps, SID_A, { loans: { decision: "do" } })).rejects.toMatchObject({
+      code: "not_in_review",
+    });
+  });
+});
+
 describe("FUNC-05 承継しない・保留も選べ、断定しない。資料は自動送信されない", () => {
   it("「店を閉じる」「まだ決めない」を選べる。何も選ばなくてもよい", async () => {
     const deps = createDeps();

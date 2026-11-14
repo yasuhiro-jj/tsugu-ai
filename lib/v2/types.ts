@@ -75,6 +75,19 @@ export type Report = {
   generatedAt: string;
 };
 
+/** 「次の一歩」の候補のもと。準備リストの分野か、相談先への連絡 */
+export type StepKey = PrepKey | "consult";
+
+export type WhenKey = "this_week" | "this_month" | "three_months" | "undecided";
+
+export type StepChoice = {
+  /** do=やる / hold=今は保留 / null=まだ決めていない */
+  decision: "do" | "hold" | null;
+  /** 誰が（役割で書く。名前は書かない） */
+  who: string;
+  when: WhenKey | null;
+};
+
 export type Phase = "interview" | "review";
 
 export type Session = {
@@ -90,6 +103,8 @@ export type Session = {
   reviewConfirmed: boolean;
   prep: Record<PrepKey, PrepEntry>;
   options: OptionKey[];
+  /** 「次の一歩」で本人が選んだこと。本人用のメモで、相談資料には入れない */
+  steps: Partial<Record<StepKey, StepChoice>>;
   consultant: ConsultantKey | null;
   /** 相談の目的（本人が書き直せる。資料に載る） */
   purpose: string;

@@ -13,6 +13,7 @@ import {
   DEFAULT_PURPOSE,
   INTRO,
   MAX_PREP_TEXT,
+  MAX_WHO,
   MAX_PURPOSE,
   MAX_TEXT,
   OPTION_KEYS,
@@ -22,6 +23,8 @@ import {
   PREP_NOT_YET,
   PREP_STATUS_KEYS,
   PREP_STATUSES,
+  STEP_KEYS,
+  WHEN_KEYS,
   THEME_KEYS,
   themeDef,
 } from "./content";
@@ -38,6 +41,9 @@ import {
   type ReportGenerator,
   type ReportInput,
   type Session,
+  type StepChoice,
+  type StepKey,
+  type WhenKey,
   type SessionView,
   type ThemeKey,
   type ThemeState,
@@ -87,6 +93,7 @@ export function cleanText(value: unknown, max: number = MAX_TEXT): string {
 function fillPrep(session: Session): Session {
   session.prep ??= {} as Record<PrepKey, PrepEntry>;
   for (const key of PREP_KEYS) session.prep[key] ??= { ...EMPTY_PREP };
+  session.steps ??= {};
   return session;
 }
 
@@ -223,6 +230,7 @@ export function start(deps: Deps, sid: string): Promise<SessionView> {
       reviewConfirmed: false,
       prep: Object.fromEntries(PREP_KEYS.map((k) => [k, { ...EMPTY_PREP }])) as unknown as Record<PrepKey, PrepEntry>,
       options: [],
+      steps: {},
       consultant: null,
       purpose: DEFAULT_PURPOSE,
       report: null,
@@ -402,6 +410,45 @@ export function setPrep(deps: Deps, sid: string, raw: unknown): Promise<SessionV
       }
     }
     session.report = null;
+    return save(deps, session);
+  });
+}
+
+/**
+ * 「次の一歩」で本人が選んだこと（やる／今は保留、誰が、いつ頃）を保存する。
+ * 本人用のメモで、相談資料には入れない。資料の下書きにも影響しない。
+ * 1つでも正しくない指定があれば、何も変えない
+ */
+export function setNextSteps(deps: Deps, sid: string, raw: unknown): Promise<SessionView> {
+  return withLock(sid, async () => {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new V2Error("bad_input", "次の一歩の指定が正しくありません。");
+    }
+    const updates = new Map<StepKey, StepChoice>();
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (!STEP_KEYS.includes(key as StepKey) || value === null || typeof value !== "object" || Array.isArray(value)) {
+        throw new V2Error("bad_input", "次の一歩の指定が正しくありません。");
+      }
+      const v = value as Record<string, unknown>;
+      const decision = v.decision === undefined ? null : v.decision;
+      if (decision !== null && decision !== "do" && decision !== "hold") {
+        throw new V2Error("bad_input", "次の一歩の指定が正しくありません。");
+      }
+      const when = v.when === undefined ? null : v.when;
+      if (when !== null && !WHEN_KEYS.includes(when as WhenKey)) {
+        throw new V2Error("bad_input", "次の一歩の指定が正しくありません。");
+      }
+      // 「誰が」「いつ頃」は、やると決めたときだけ持つ
+      updates.set(key as StepKey, {
+        decision,
+        who: decision === "do" ? cleanOptional(v.who, MAX_WHO) : "",
+        when: decision === "do" ? (when as WhenKey | null) : null,
+      });
+    }
+
+    const session = load(deps, sid);
+    requireReview(session);
+    for (const [key, choice] of updates) session.steps[key] = choice;
     return save(deps, session);
   });
 }
