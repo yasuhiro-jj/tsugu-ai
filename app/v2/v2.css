@@ -211,9 +211,9 @@ body:has(.v2) .site-header {
 }
 
 @media print {
-  .site-header,
-  .site-footer,
-  .skip-link,
+  body:has(.v2) .site-header,
+  body:has(.v2) .site-footer,
+  body:has(.v2) .skip-link,
   .v2-banner,
   .v2-header,
   .v2-no-print {

@@ -158,13 +158,15 @@ describe("FUNC-03 本人が要約を直せて、発言・整理案・未確認�
     const view = await completeInterview(deps, SID_A);
     const note = view.items.find((i) => i.kind === "ai_note")!;
     const edited = await service.editItem(deps, SID_A, note.id, "それは違います。味のことを相談したいです。");
-    const after = edited.items.find((i) => i.id === note.id)!;
-    expect(after.text).toBe("それは違います。味のことを相談したいです。");
+    const after = edited.items.find((i) => i.text === "それは違います。味のことを相談したいです。")!;
     expect(after.edited).toBe(true);
     expect(after.kind).toBe("ai_note");
+    // 直した項目は ID が変わる（古い画面が持っている ID は使えなくなる）
+    expect(after.id).not.toBe(note.id);
+    expect(edited.items.find((i) => i.id === note.id)).toBeUndefined();
 
-    const removed = await service.removeItem(deps, SID_A, note.id);
-    expect(removed.items.find((i) => i.id === note.id)).toBeUndefined();
+    const removed = await service.removeItem(deps, SID_A, after.id);
+    expect(removed.items.find((i) => i.id === after.id)).toBeUndefined();
   });
 
   it("空の文章・長すぎる文章・存在しない項目は受け付けない", async () => {
@@ -213,10 +215,79 @@ describe("準備リスト：確認済み／要確認／不明と、次に確認�
     await service.confirmReview(deps, SID_A);
     const ids = done.items.filter((i) => i.prepKey === "loans" || i.prepKey === "permits").map((i) => i.id);
     await service.setReportSettings(deps, SID_A, "bank", ids);
+    expect((await service.generateReport(deps, SID_A)).report).not.toBeNull();
     const view = await service.setPrep(deps, SID_A, { loans: { status: "todo" }, permits: { status: null } });
     expect(view.items.find((i) => i.prepKey === "loans")!.selected).toBe(false);
     expect(view.items.find((i) => i.prepKey === "permits")!.selected).toBe(true);
+    // 古い資料は破棄される
     expect(view.report).toBeNull();
+
+    // 文章が変わらない保存でも、古い資料は破棄される（選択はそのまま）
+    await service.generateReport(deps, SID_A);
+    const same = await service.setPrep(deps, SID_A, { permits: { status: null } });
+    expect(same.report).toBeNull();
+    expect(same.items.find((i) => i.prepKey === "permits")!.selected).toBe(true);
+  });
+
+  it("「確認済み」から変えると、確かめた資料の記載は消え、「載せる」も外れる", async () => {
+    const deps = createDeps();
+    await completeInterview(deps, SID_A);
+    await service.confirmReview(deps, SID_A);
+    const first = await service.setPrep(deps, SID_A, { contracts: { status: "confirmed", basis: "契約書の写し（架空）" } });
+    const item = first.items.find((i) => i.prepKey === "contracts")!;
+    await service.setReportSettings(deps, SID_A, "bank", [item.id]);
+    // basis を付けたまま状態だけ変えて送っても、basis は残らない
+    const view = await service.setPrep(deps, SID_A, { contracts: { status: "todo", basis: "契約書の写し（架空）" } });
+    const after = view.items.find((i) => i.prepKey === "contracts")!;
+    expect(view.prep.contracts).toEqual({ status: "todo", next: "", basis: "" });
+    expect(after.text).toBe("店舗・設備・契約：要確認");
+    expect(after.selected).toBe(false);
+    expect(JSON.stringify(view)).not.toContain("契約書の写し");
+  });
+
+  it("古い画面が持っている ID では「載せる」にできない（見ていない文章が資料に入らない）", async () => {
+    const deps = createDeps();
+    const done = await completeInterview(deps, SID_A);
+    await service.confirmReview(deps, SID_A);
+    const oldId = done.items.find((i) => i.prepKey === "loans")!.id;
+    // 別の画面で書き足して保存した、という状況
+    const changed = await service.setPrep(deps, SID_A, { loans: { status: "todo", next: "あとから書き足した内容" } });
+    expect(changed.items.find((i) => i.prepKey === "loans")!.id).not.toBe(oldId);
+    // 古い画面が、古い ID のまま「載せる」を送る
+    await expect(service.setReportSettings(deps, SID_A, "bank", [oldId])).rejects.toMatchObject({ status: 404 });
+    expect(service.getView(deps, SID_A)!.items.every((i) => i.selected === false)).toBe(true);
+    expect(deps.generatorInputs).toHaveLength(0);
+  });
+
+  it("想定外の形の指定（配列、文字でない値、特別な名前のキー）は受け付けない", async () => {
+    const deps = createDeps();
+    await completeInterview(deps, SID_A);
+    const before = service.getView(deps, SID_A)!;
+    for (const bad of [
+      '{"loans":[]}',
+      '{"loans":{"status":"todo","next":123}}',
+      '{"loans":{"status":"confirmed","basis":["x"]}}',
+      '{"__proto__":{"status":"todo"}}',
+      '{"constructor":{"status":"todo"}}',
+      '{"loans":"todo"}',
+      "null",
+      '"loans"',
+    ]) {
+      await expect(service.setPrep(deps, SID_A, JSON.parse(bad)), bad).rejects.toBeInstanceOf(V2Error);
+    }
+    expect(service.getView(deps, SID_A)).toEqual(before);
+    expect(({} as Record<string, unknown>).status).toBeUndefined();
+  });
+
+  it("準備リストを持たない古い形の面談を読んでも、止まらずに「まだ確認していません」として扱う", async () => {
+    const deps = createDeps();
+    await completeInterview(deps, SID_A);
+    const raw = deps.store.get(SID_A)!;
+    delete (raw as unknown as { prep?: unknown }).prep;
+    deps.store.put(raw);
+    expect(Object.values(service.getView(deps, SID_A)!.prep).every((e) => e.status === null)).toBe(true);
+    const view = await service.setPrep(deps, SID_A, { loans: { status: "unknown" } });
+    expect(view.prep.loans.status).toBe("unknown");
   });
 
   it("正しくない指定が1つでもあれば、何も変わらない", async () => {

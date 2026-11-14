@@ -104,7 +104,10 @@ describe("FUNC-04／SEC-03 選ばなかった項目は、資料生成の入力�
     const edited = await service.editItem(deps, SID_A, ids[0], "直した");
     expect(edited.report).toBeNull();
     // 書き直した項目は「載せる」が外れる（本人が選び直すまで資料に入らない）
-    expect(edited.items.find((i) => i.id === ids[0])!.selected).toBe(false);
+    const rewritten = edited.items.find((i) => i.text === "直した")!;
+    expect(rewritten.selected).toBe(false);
+    // ID も変わる（古い画面の ID では選べない）
+    expect(rewritten.id).not.toBe(ids[0]);
     await service.generateReport(deps, SID_A);
     expect(JSON.stringify(deps.generatorInputs.at(-1))).not.toContain("直した");
     expect((await service.removeItem(deps, SID_A, ids[1])).report).toBeNull();
@@ -140,6 +143,12 @@ describe("FUNC-04／SEC-03 選ばなかった項目は、資料生成の入力�
     const permits = view.items.find((i) => i.prepKey === "permits")!;
     await service.setReportSettings(deps, SID_A, "bank", [permits.id]);
     const done = await service.generateReport(deps, SID_A);
+
+    // 載せると選んだ分野を書き換えたら、古い文章も新しい文章も、選び直すまで資料に入らない
+    const rewritten = await service.setPrep(deps, SID_A, { permits: { status: "todo", next: `${SECRET}を持っていく` } });
+    expect(rewritten.report).toBeNull();
+    await expect(service.generateReport(deps, SID_A)).rejects.toMatchObject({ code: "nothing_selected" });
+    expect(deps.generatorInputs).toHaveLength(1);
 
     expect(done.report!.prep).toEqual([`許認可・衛生：不明／次に確認すること：${PUBLIC}に聞く`]);
     expect(JSON.stringify(done.report)).not.toContain(SECRET);

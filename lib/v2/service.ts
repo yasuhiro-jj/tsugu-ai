@@ -51,6 +51,8 @@ export type Deps = {
   newId: () => string;
 };
 
+const EMPTY_PREP: PrepEntry = { status: null, next: "", basis: "" };
+
 const RETRY_HINT = "入力した内容は保存されていません。少し待って、もう一度お試しください。";
 
 // 同じ人の操作が重なっても順番に処理する
@@ -81,10 +83,17 @@ export function cleanText(value: unknown, max: number = MAX_TEXT): string {
   return text;
 }
 
+/** 準備リストを持たない古い形の面談を読んだときに、欠けている分を補う（内容は作り足さない） */
+function fillPrep(session: Session): Session {
+  session.prep ??= {} as Record<PrepKey, PrepEntry>;
+  for (const key of PREP_KEYS) session.prep[key] ??= { ...EMPTY_PREP };
+  return session;
+}
+
 function load(deps: Deps, sid: string): Session {
   const session = deps.store.get(sid);
   if (!session) throw new V2Error("no_session", "面談がまだ始まっていません。最初の画面から始めてください。", 409);
-  return session;
+  return fillPrep(session);
 }
 
 function save(deps: Deps, session: Session): SessionView {
@@ -110,8 +119,6 @@ function advance(deps: Deps, session: Session, prefix: string) {
   session.phase = "review";
   session.items = buildReviewItems(session.themes, deps.newId);
 }
-
-const EMPTY_PREP: PrepEntry = { status: null, next: "", basis: "" };
 
 /** 準備リストの1分野を、資料に載せる1行の文章にする。本人が選んだ状態と書いた言葉だけを使う */
 export function prepText(key: PrepKey, entry: PrepEntry): string {
@@ -192,7 +199,7 @@ export function buildReportInput(session: Session): ReportInput {
 
 export function getView(deps: Deps, sid: string): SessionView | null {
   const session = deps.store.get(sid);
-  return session ? toView(session) : null;
+  return session ? toView(fillPrep(session)) : null;
 }
 
 /** 面談を始める。すでに始めていれば続きから（中断しても同じ場所に戻れる） */
@@ -321,8 +328,10 @@ export function editItem(deps: Deps, sid: string, itemId: unknown, rawText: unkn
     rejectPrep(item);
     item.text = text;
     item.edited = true;
-    // 書き直した内容は、もう一度本人が「載せる」を選ぶまで資料に入れない
+    // 書き直した内容は、もう一度本人が「載せる」を選ぶまで資料に入れない。
+    // ID も発行し直す：古い文章を表示したままの画面から、同じ ID で「載せる」を送れないようにする
     item.selected = false;
+    item.id = deps.newId();
     session.report = null;
     return save(deps, session);
   });
@@ -361,7 +370,7 @@ export function setPrep(deps: Deps, sid: string, raw: unknown): Promise<SessionV
     }
     const updates = new Map<PrepKey, PrepEntry>();
     for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-      if (!PREP_KEYS.includes(key as PrepKey) || value === null || typeof value !== "object") {
+      if (!PREP_KEYS.includes(key as PrepKey) || value === null || typeof value !== "object" || Array.isArray(value)) {
         throw new V2Error("bad_input", "準備リストの指定が正しくありません。");
       }
       const v = value as Record<string, unknown>;
@@ -386,8 +395,10 @@ export function setPrep(deps: Deps, sid: string, raw: unknown): Promise<SessionV
       if (!item) {
         session.items.push({ id: deps.newId(), kind: "prep", theme: null, prepKey: key, text, edited: false, selected: false });
       } else if (item.text !== text) {
+        // 文章が変わったら「載せる」を外し、ID も発行し直す（古い画面の ID では選べないように）
         item.text = text;
         item.selected = false;
+        item.id = deps.newId();
       }
     }
     session.report = null;
