@@ -69,7 +69,7 @@ function record(env: Env, at: string, actor: Actor | null, action: AuditAction, 
 /** 手元の試作用：その合言葉で始めた面談が、保存先にあるか */
 export async function hasInterview(env: Env, token: string | null): Promise<boolean> {
   const actor = await identify(env, token);
-  return actor !== null && env.deps.store.get(interviewKey(actor)) !== null;
+  return actor !== null && (await env.deps.store.get(interviewKey(actor))) !== null;
 }
 
 /** 入口で断った操作（ほかのサイトからの操作、回数の上限など）を記録する。本文は受け取らない */
@@ -83,7 +83,7 @@ export async function view(env: Env, token: string | null, requestedId?: unknown
   const actor = await identify(env, token);
   try {
     const resolved = authorize(actor, requestedId);
-    const session = getView(scoped(env, resolved.actor), resolved.key);
+    const session = await getView(scoped(env, resolved.actor), resolved.key);
     record(env, at, actor, "view", { outcome: "ok" });
     return session;
   } catch (e) {

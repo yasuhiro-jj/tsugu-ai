@@ -116,6 +116,8 @@ export type Phase = "interview" | "review";
 
 export type Session = {
   id: string;
+  /** 保存先が付ける版の番号（同時に変えられたことに気づくため）。画面へは返さない */
+  rev?: number;
   /** 持ち主（会社と本人）。権限確認で照らし合わせる。画面へは返さない */
   owner?: { tenantId: string; userId: string };
   createdAt: string;
@@ -140,7 +142,7 @@ export type Session = {
 };
 
 /** 画面へ返す形。置き場所の ID と持ち主の ID は返さない */
-export type SessionView = Omit<Session, "id" | "owner">;
+export type SessionView = Omit<Session, "id" | "owner" | "rev">;
 
 /** 資料生成に渡す入力。本人が選んだ項目だけが入る */
 export type ReportInput = {

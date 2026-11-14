@@ -42,7 +42,7 @@ describe("FUNC-04／SEC-03 選ばなかった項目は、資料生成の入力�
     );
     await service.confirmReview(deps, SID_A);
     await service.setOptions(deps, SID_A, ["closure"]);
-    const current = service.getView(deps, SID_A)!;
+    const current = (await service.getView(deps, SID_A))!;
 
     // 選ばない：money テーマのすべての項目と、選択肢の項目
     const chosen = current.items
@@ -123,7 +123,7 @@ describe("FUNC-04／SEC-03 選ばなかった項目は、資料生成の入力�
     await service.confirmReview(deps, SID_A);
     const target = view.items.find((i) => i.text === SECRET)!;
     await service.removeItem(deps, SID_A, target.id);
-    const rest = service.getView(deps, SID_A)!.items.map((i) => i.id);
+    const rest = (await service.getView(deps, SID_A))!.items.map((i) => i.id);
     await service.setReportSettings(deps, SID_A, "bank", rest);
     const done = await service.generateReport(deps, SID_A);
     expect(JSON.stringify(done.report)).not.toContain(SECRET);
@@ -197,11 +197,11 @@ describe("FUNC-04／SEC-03 選ばなかった項目は、資料生成の入力�
     const deps = createDeps();
     const view = await completeInterview(deps, SID_A);
     await service.setReportSettings(deps, SID_A, "bank", [view.items[0].id]);
-    const before = service.getView(deps, SID_A)!;
+    const before = (await service.getView(deps, SID_A))!;
     await expect(
       service.setReportSettings(deps, SID_A, "support_center", [view.items[1].id, "unknown"]),
     ).rejects.toMatchObject({ status: 404 });
-    expect(service.getView(deps, SID_A)).toEqual(before);
+    expect((await service.getView(deps, SID_A))).toEqual(before);
   });
 
   it("1つも選んでいないと資料は作れず、資料生成は呼ばれない", async () => {
@@ -229,7 +229,7 @@ describe("ほかの人の面談に触れられない（試作の範囲。本人�
   it("別のセッションからは、内容も存在も見えない", async () => {
     const deps = createDeps();
     await completeInterview(deps, SID_A, () => SECRET);
-    expect(service.getView(deps, SID_B)).toBeNull();
+    expect((await service.getView(deps, SID_B))).toBeNull();
     const b = await service.start(deps, SID_B);
     expect(JSON.stringify(b)).not.toContain(SECRET);
   });
@@ -243,7 +243,7 @@ describe("ほかの人の面談に触れられない（試作の範囲。本人�
     await expect(service.editItem(deps, SID_B, foreign, "書き換え")).rejects.toMatchObject({ status: 404 });
     await expect(service.removeItem(deps, SID_B, foreign)).rejects.toMatchObject({ status: 404 });
     await expect(service.setReportSettings(deps, SID_B, "bank", [foreign])).rejects.toMatchObject({ status: 404 });
-    expect(service.getView(deps, SID_A)!.items[0].text).toBe(SECRET);
+    expect((await service.getView(deps, SID_A))!.items[0].text).toBe(SECRET);
   });
 
   it("画面へ返す内容にセッション ID を含めない", async () => {
@@ -256,9 +256,9 @@ describe("ほかの人の面談に触れられない（試作の範囲。本人�
   it("保存先から受け取った内容を書き換えても、保存内容は変わらない", async () => {
     const deps = createDeps();
     await service.start(deps, SID_A);
-    const got = deps.store.get(SID_A)!;
+    const got = (await deps.store.get(SID_A))!;
     got.log.push({ who: "me", theme: "legacy", text: "勝手な追記" });
-    expect(deps.store.get(SID_A)!.log).toHaveLength(1);
+    expect((await deps.store.get(SID_A))!.log).toHaveLength(1);
   });
 });
 
@@ -271,16 +271,16 @@ describe("保存先（メモリ）の上限と期限", () => {
     await service.start(deps, "s1");
     await service.start(deps, "s2");
     await expect(service.start(deps, "s3")).rejects.toMatchObject({ code: "busy", status: 503 });
-    expect(store.get("s1")).not.toBeNull();
-    expect(store.get("s3")).toBeNull();
-    expect(store.size()).toBe(2);
+    expect((await store.get("s1"))).not.toBeNull();
+    expect((await store.get("s3"))).toBeNull();
+    expect((await store.size())).toBe(2);
     // すでにある面談の更新は、いっぱいでも受け付ける
     await service.skip(deps, "s1");
     now = 5000;
-    expect(store.size()).toBe(0);
+    expect((await store.size())).toBe(0);
     // 期限で空いたら、また始められる
     await service.start(deps, "s3");
-    expect(store.size()).toBe(1);
+    expect((await store.size())).toBe(1);
   });
 });
 
@@ -306,6 +306,7 @@ describe("既存版（ハッカソン版）へつながる経路がない", () =
   }
 
   const files = V2_DIRS.flatMap((d) => walk(join(ROOT, d))).filter((f) => /\.(ts|tsx)$/.test(f));
+  const isLibsqlStore = (file: string) => file.replace(/\\/g, "/").endsWith("/lib/v2/store-libsql.ts");
 
   it("2.0 のファイルは、既存の lib・components・DB・AI の部品を読み込まない", () => {
     expect(files.length).toBeGreaterThan(10);
@@ -313,7 +314,9 @@ describe("既存版（ハッカソン版）へつながる経路がない", () =
       const source = readFileSync(file, "utf8");
       const specs = [...source.matchAll(/(?:from\s+|import\s*\(\s*|import\s+)["']([^"']+)["']/g)].map((m) => m[1]);
       for (const spec of specs) {
-        expect(ALLOWED.some((re) => re.test(spec)), `${file} が ${spec} を読み込んでいます`).toBe(true);
+        // データベースの部品を読み込んでよいのは、Turso 用の保存先のファイルだけ
+        const ok = ALLOWED.some((re) => re.test(spec)) || (spec === "@libsql/client" && isLibsqlStore(file));
+        expect(ok, `${file} が ${spec} を読み込んでいます`).toBe(true);
       }
       // 相対パスで v2 の外へ出ていないこと
       expect(source, file).not.toMatch(/from\s+["'](\.\.\/)+(lib|components)\/(?!v2)/);
@@ -323,11 +326,24 @@ describe("既存版（ハッカソン版）へつながる経路がない", () =
   it("2.0 のファイルは、鍵・外部通信・DB を使わない", () => {
     for (const file of files) {
       const source = readFileSync(file, "utf8");
-      expect(source, file).not.toMatch(/ANTHROPIC|TURSO|libsql|@anthropic-ai/i);
+      // 鍵の名前（環境変数）と AI の部品は、どのファイルにも出てこない
+      expect(source, file).not.toMatch(/ANTHROPIC|TURSO_|@anthropic-ai/i);
+      // データベースの部品は、Turso 用の保存先のファイルにだけ出てくる
+      if (!isLibsqlStore(file)) expect(source, file).not.toMatch(/@libsql/i);
       expect(source, file).not.toMatch(/https?:\/\//);
       const envs = [...source.matchAll(/process\.env\.([A-Z0-9_]+)/g)].map((m) => m[1]);
       expect(envs.every((e) => e === "NODE_ENV" || e === "VERCEL"), file).toBe(true);
     }
+  });
+
+  it("Turso 用の保存先は、まだどこからも使っていない（手元の試作はメモリ保存のまま）", () => {
+    const users = files.filter((f) => !isLibsqlStore(f) && /store-libsql["']/.test(readFileSync(f, "utf8")));
+    expect(users).toEqual([]);
+    const runtime = readFileSync(join(ROOT, "lib/v2/runtime.ts"), "utf8");
+    expect(runtime).toContain("createMemoryStore");
+    // ハッカソン版のデータベースの入口（lib/db.ts）も、鍵の名前も、接続を作る処理も入っていない
+    const store = readFileSync(join(ROOT, "lib/v2/store-libsql.ts"), "utf8");
+    expect(store).not.toMatch(/process\.env|createClient|@\/lib\/db/);
   });
 
   it("外部への通信（fetch）は、画面から自分の API を呼ぶ1か所だけ", () => {

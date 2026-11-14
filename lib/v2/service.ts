@@ -30,7 +30,7 @@ import {
 } from "./content";
 import { CHECK_VALUES, courseDef, isCourseId, MAX_NOTE } from "./courses";
 import { echo, safeQuestion } from "./echo";
-import { StoreFullError, type V2Store } from "./store";
+import { StoreConflictError, StoreFullError, type V2Store } from "./store";
 import {
   V2Error,
   type ConsultantKey,
@@ -84,7 +84,7 @@ async function withLock<T>(sid: string, fn: () => Promise<T>): Promise<T> {
 }
 
 function toView(session: Session): SessionView {
-  const { id: _id, owner: _owner, ...view } = session;
+  const { id: _id, owner: _owner, rev: _rev, ...view } = session;
   return view;
 }
 
@@ -126,16 +126,24 @@ function checkOwner(deps: Deps, session: Session) {
   }
 }
 
-function load(deps: Deps, sid: string): Session {
-  const session = deps.store.get(sid);
+async function load(deps: Deps, sid: string): Promise<Session> {
+  const session = await deps.store.get(sid);
   if (!session) throw new V2Error("no_session", NO_SESSION, 409);
   checkOwner(deps, session);
   return fillPrep(session);
 }
 
-function save(deps: Deps, session: Session): SessionView {
+async function save(deps: Deps, session: Session): Promise<SessionView> {
   session.updatedAt = deps.now();
-  deps.store.put(session);
+  try {
+    await deps.store.put(session);
+  } catch (e) {
+    if (e instanceof StoreConflictError) {
+      // ほかの画面などで先に変わっていた。上書きせず、読み込み直しを案内する
+      throw new V2Error("conflict", "ほかの画面で内容が変わりました。画面を読み込み直して、もう一度お試しください。", 409);
+    }
+    throw e;
+  }
   return toView(session);
 }
 
@@ -242,8 +250,8 @@ export function buildReportInput(session: Session): ReportInput {
   };
 }
 
-export function getView(deps: Deps, sid: string): SessionView | null {
-  const session = deps.store.get(sid);
+export async function getView(deps: Deps, sid: string): Promise<SessionView | null> {
+  const session = await deps.store.get(sid);
   if (!session) return null;
   checkOwner(deps, session);
   return toView(fillPrep(session));
@@ -252,7 +260,7 @@ export function getView(deps: Deps, sid: string): SessionView | null {
 /** 面談を始める。すでに始めていれば続きから（中断しても同じ場所に戻れる） */
 export function start(deps: Deps, sid: string, owner?: Session["owner"]): Promise<SessionView> {
   return withLock(sid, async () => {
-    const existing = deps.store.get(sid);
+    const existing = await deps.store.get(sid);
     if (existing) {
       checkOwner(deps, existing);
       return toView(fillPrep(existing));
@@ -344,7 +352,7 @@ export function saveLearning(deps: Deps, sid: string, courseId: unknown, raw: un
       entry.checks[key] = value as "yes" | "no" | "unknown";
     }
 
-    const existing = deps.store.get(sid);
+    const existing = await deps.store.get(sid);
     if (existing) checkOwner(deps, existing);
     const session = existing ? fillPrep(existing) : create(deps, sid);
     session.learning[courseId] = entry;
@@ -355,7 +363,7 @@ export function saveLearning(deps: Deps, sid: string, courseId: unknown, raw: un
 export function answer(deps: Deps, sid: string, rawText: unknown): Promise<SessionView> {
   return withLock(sid, async () => {
     const text = cleanText(rawText);
-    const session = load(deps, sid);
+    const session = await load(deps, sid);
     const key = session.currentTheme;
     if (session.phase !== "interview" || !key) {
       throw new V2Error("not_in_interview", "面談はすでに終わっています。", 409);
@@ -403,7 +411,7 @@ export function answer(deps: Deps, sid: string, rawText: unknown): Promise<Sessi
 /** 今の質問を飛ばす。答えていないテーマは「未確認」として残る */
 export function skip(deps: Deps, sid: string): Promise<SessionView> {
   return withLock(sid, async () => {
-    const session = load(deps, sid);
+    const session = await load(deps, sid);
     const key = session.currentTheme;
     if (session.phase !== "interview" || !key) {
       throw new V2Error("not_in_interview", "面談はすでに終わっています。", 409);
@@ -418,7 +426,7 @@ export function skip(deps: Deps, sid: string): Promise<SessionView> {
 /** 残りの質問をすべて飛ばして、本人確認へ進む */
 export function finishEarly(deps: Deps, sid: string): Promise<SessionView> {
   return withLock(sid, async () => {
-    const session = load(deps, sid);
+    const session = await load(deps, sid);
     if (session.phase !== "interview") throw new V2Error("not_in_interview", "面談はすでに終わっています。", 409);
     for (const key of THEME_KEYS) {
       const state = session.themes[key];
@@ -452,7 +460,7 @@ function rejectPrep(item: Item) {
 export function editItem(deps: Deps, sid: string, itemId: unknown, rawText: unknown): Promise<SessionView> {
   return withLock(sid, async () => {
     const text = cleanText(rawText);
-    const session = load(deps, sid);
+    const session = await load(deps, sid);
     requireReview(session);
     const item = findItem(session, itemId);
     rejectPrep(item);
@@ -506,7 +514,7 @@ function forgetAnswer(deps: Deps, session: Session, theme: ThemeKey, answerId: s
 /** 項目を外す。本人の発言は、面談の記録からも消す */
 export function removeItem(deps: Deps, sid: string, itemId: unknown): Promise<SessionView> {
   return withLock(sid, async () => {
-    const session = load(deps, sid);
+    const session = await load(deps, sid);
     requireReview(session);
     const item = findItem(session, itemId);
     rejectPrep(item);
@@ -530,7 +538,7 @@ export function removeItem(deps: Deps, sid: string, itemId: unknown): Promise<Se
 
 export function confirmReview(deps: Deps, sid: string): Promise<SessionView> {
   return withLock(sid, async () => {
-    const session = load(deps, sid);
+    const session = await load(deps, sid);
     requireReview(session);
     session.reviewConfirmed = true;
     return save(deps, session);
@@ -565,7 +573,7 @@ export function setPrep(deps: Deps, sid: string, raw: unknown): Promise<SessionV
       });
     }
 
-    const session = load(deps, sid);
+    const session = await load(deps, sid);
     requireReview(session);
     for (const [key, entry] of updates) {
       session.prep[key] = entry;
@@ -619,7 +627,7 @@ export function setNextSteps(deps: Deps, sid: string, raw: unknown): Promise<Ses
       });
     }
 
-    const session = load(deps, sid);
+    const session = await load(deps, sid);
     requireReview(session);
     for (const [key, choice] of updates) session.steps[key] = choice;
     return save(deps, session);
@@ -632,7 +640,7 @@ export function setOptions(deps: Deps, sid: string, raw: unknown): Promise<Sessi
     if (!Array.isArray(raw) || raw.some((v) => !OPTION_KEYS.includes(v as OptionKey))) {
       throw new V2Error("bad_input", "選択肢の指定が正しくありません。");
     }
-    const session = load(deps, sid);
+    const session = await load(deps, sid);
     requireReview(session);
     const chosen = OPTION_KEYS.filter((k) => raw.includes(k));
     session.options = chosen;
@@ -673,7 +681,7 @@ export function setReportSettings(
     if (!Array.isArray(selectedIds) || selectedIds.some((v) => typeof v !== "string")) {
       throw new V2Error("bad_input", "載せる項目の指定が正しくありません。");
     }
-    const session = load(deps, sid);
+    const session = await load(deps, sid);
     requireReview(session);
     const known = new Set(session.items.map((i) => i.id));
     if (selectedIds.some((id) => !known.has(id))) {
@@ -693,7 +701,7 @@ export function setReportSettings(
 /** 相談資料の下書きを作る。自動では誰にも送らない */
 export function generateReport(deps: Deps, sid: string): Promise<SessionView> {
   return withLock(sid, async () => {
-    const session = load(deps, sid);
+    const session = await load(deps, sid);
     requireReview(session);
     if (!session.reviewConfirmed) {
       throw new V2Error("not_confirmed", "先に、整理した内容をご本人が確認してください。", 409);
@@ -716,7 +724,7 @@ export function generateReport(deps: Deps, sid: string): Promise<SessionView> {
 /** この面談の内容をすべて消す */
 export function reset(deps: Deps, sid: string): Promise<null> {
   return withLock(sid, async () => {
-    deps.store.delete(sid);
+    await deps.store.delete(sid);
     return null;
   });
 }
