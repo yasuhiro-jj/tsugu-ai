@@ -77,7 +77,7 @@ async function withLock<T>(sid: string, fn: () => Promise<T>): Promise<T> {
 }
 
 function toView(session: Session): SessionView {
-  const { id: _id, ...view } = session;
+  const { id: _id, owner: _owner, ...view } = session;
   return view;
 }
 
@@ -228,7 +228,7 @@ export function getView(deps: Deps, sid: string): SessionView | null {
 }
 
 /** 面談を始める。すでに始めていれば続きから（中断しても同じ場所に戻れる） */
-export function start(deps: Deps, sid: string): Promise<SessionView> {
+export function start(deps: Deps, sid: string, owner?: Session["owner"]): Promise<SessionView> {
   return withLock(sid, async () => {
     const existing = deps.store.get(sid);
     if (existing) return toView(existing);
@@ -238,6 +238,7 @@ export function start(deps: Deps, sid: string): Promise<SessionView> {
     ) as unknown as Record<ThemeKey, ThemeState>;
     const session: Session = {
       id: sid,
+      ...(owner ? { owner: { ...owner } } : {}),
       createdAt: now,
       updatedAt: now,
       phase: "interview",

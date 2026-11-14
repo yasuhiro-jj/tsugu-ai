@@ -2,7 +2,7 @@
 
 import * as service from "./service";
 import type { Deps } from "./service";
-import { V2Error, type SessionView } from "./types";
+import { V2Error, type Session, type SessionView } from "./types";
 
 export const ACTIONS = [
   "start",
@@ -30,12 +30,13 @@ export async function dispatch(
   deps: Deps,
   sid: string,
   body: Record<string, unknown>,
+  owner?: Session["owner"],
 ): Promise<SessionView | null> {
   const action = body.action;
   if (!isAction(action)) throw new V2Error("bad_action", "操作の指定が正しくありません。");
   switch (action) {
     case "start":
-      return service.start(deps, sid);
+      return service.start(deps, sid, owner);
     case "answer":
       return service.answer(deps, sid, body.text);
     case "skip":

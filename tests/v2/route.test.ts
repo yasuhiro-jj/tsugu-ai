@@ -42,6 +42,8 @@ beforeEach(() => {
   jar.clear();
   setCalls.length = 0;
   delete (globalThis as { __tsuguV2Store?: unknown }).__tsuguV2Store;
+  delete (globalThis as { __tsuguV2Audit?: unknown }).__tsuguV2Audit;
+  delete (globalThis as { __tsuguV2StartLimiter?: unknown }).__tsuguV2StartLimiter;
   vi.unstubAllEnvs();
 });
 
@@ -156,6 +158,28 @@ describe("セッション ID の扱い", () => {
     expect(other.session).toBeNull();
     await POST(post({ action: "start" }));
     expect(JSON.stringify(await (await GET()).json())).not.toContain("HIMITSU-ROUTE-9901");
+  });
+});
+
+describe("新しく始める回数の上限", () => {
+  it("1分に30回を超えて新しく始めようとすると 429 で断り、すでに始めた人の面談は残る", async () => {
+    const { POST, GET } = await load();
+    await POST(post({ action: "start" }));
+    const mine = jar.get(COOKIE)!;
+    await POST(post({ action: "answer", text: "先に始めた人の答え" }));
+    let limited = 0;
+    for (let i = 0; i < 40; i++) {
+      jar.clear();
+      const res = await POST(post({ action: "start" }));
+      if (res.status === 429) limited++;
+    }
+    expect(limited).toBe(11);
+    jar.clear();
+    jar.set(COOKIE, mine);
+    const kept = await (await GET()).json();
+    expect(kept.session.themes.legacy.answers).toEqual(["先に始めた人の答え"]);
+    // すでに始めている人の操作は、上限に達していても受け付ける
+    expect((await POST(post({ action: "skip" }))).status).toBe(200);
   });
 });
 

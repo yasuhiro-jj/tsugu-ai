@@ -6,14 +6,22 @@ import "server-only";
 
 import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
+import type { Env } from "./access";
+import { createAuditLog, type AuditLog } from "./audit";
+import { createLocalAuth } from "./auth";
 import { mockInterviewAi, mockReportGenerator } from "./mock";
+import { createLimiter, type Limiter } from "./rate-limit";
 import type { Deps } from "./service";
 import { createMemoryStore, type V2Store } from "./store";
 
 export const SESSION_COOKIE = "tsugu_v2_sid";
 const SID_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
-const globalForV2 = globalThis as unknown as { __tsuguV2Store?: V2Store };
+const globalForV2 = globalThis as unknown as {
+  __tsuguV2Store?: V2Store;
+  __tsuguV2Audit?: AuditLog;
+  __tsuguV2StartLimiter?: Limiter;
+};
 
 export function getDeps(): Deps {
   const store = (globalForV2.__tsuguV2Store ??= createMemoryStore());
@@ -24,6 +32,21 @@ export function getDeps(): Deps {
     now: () => new Date().toISOString(),
     newId: () => randomBytes(12).toString("base64url"),
   };
+}
+
+/** 権限確認つきの入口で使う一式（認証は、ログインのない手元の試作用） */
+export function getEnv(): Env {
+  return {
+    deps: getDeps(),
+    auth: createLocalAuth(),
+    audit: (globalForV2.__tsuguV2Audit ??= createAuditLog()),
+  };
+}
+
+/** 「面談を新しく始める」回数の上限（1分に30回まで）。短時間の大量開始で、ほかの面談が押し出されるのを防ぐ */
+export function allowNewInterview(): boolean {
+  const limiter = (globalForV2.__tsuguV2StartLimiter ??= createLimiter({ max: 30, windowMs: 60_000 }));
+  return limiter.allow();
 }
 
 /**
