@@ -85,7 +85,10 @@ export default function ReportPreviewClient() {
 
       <div className="card v2-no-print">
         <div className="button-row">
-          <button className="button" type="button" onClick={() => window.print()}>
+          <Link className="button" href="/v2/next">
+            次の一歩へ進む
+          </Link>
+          <button className="button button--secondary" type="button" onClick={() => window.print()}>
             印刷する
           </button>
           <Link className="button button--secondary" href="/v2/report">

@@ -16,6 +16,7 @@ export const ACTIONS = [
   "setOptions",
   "setReportSettings",
   "generateReport",
+  "setNextSteps",
   "reset",
 ] as const;
 
@@ -55,6 +56,8 @@ export async function dispatch(
       return service.setReportSettings(deps, sid, body.consultant, body.selectedIds, body.purpose);
     case "generateReport":
       return service.generateReport(deps, sid);
+    case "setNextSteps":
+      return service.setNextSteps(deps, sid, body.steps);
     case "reset":
       return service.reset(deps, sid);
   }

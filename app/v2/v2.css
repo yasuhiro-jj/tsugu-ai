@@ -502,3 +502,26 @@ body:has(.v2) {
   margin: 0.75rem 0 0.25rem;
   font-weight: 600;
 }
+
+/* 次の一歩 */
+.v2-step__text {
+  margin: 0 0 0.5rem;
+}
+
+.v2-step__detail {
+  display: grid;
+  gap: 0 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 0.5rem;
+}
+
+.v2-step__detail .select {
+  width: 100%;
+  min-height: 44px;
+}
+
+.v2-saved {
+  margin: 0.75rem 0 0;
+  color: var(--v2-success);
+  font-weight: 600;
+}

@@ -159,6 +159,29 @@ describe("FUNC-04／SEC-03 選ばなかった項目は、資料生成の入力�
     expect(JSON.stringify(logs)).not.toContain(PUBLIC);
   });
 
+  it("「次の一歩」のメモは、資料生成の入力にも資料にも入らず、資料の下書きも変えない", async () => {
+    const logs = spyConsole();
+    const deps = createDeps();
+    const view = await completeInterview(deps, SID_A);
+    await service.confirmReview(deps, SID_A);
+    await service.setReportSettings(deps, SID_A, "bank", view.items.map((i) => i.id));
+    const before = await service.generateReport(deps, SID_A);
+
+    const after = await service.setNextSteps(deps, SID_A, {
+      loans: { decision: "do", who: SECRET, when: "this_week" },
+      consult: { decision: "hold" },
+    });
+    // 資料の下書きはそのまま（本人用のメモは資料と別物）
+    expect(after.report).toEqual(before.report);
+    expect(after.items).toEqual(before.items);
+
+    const again = await service.generateReport(deps, SID_A);
+    expect(JSON.stringify(again.report)).not.toContain(SECRET);
+    expect(JSON.stringify(deps.generatorInputs)).not.toContain(SECRET);
+    expect(JSON.stringify(deps.generatorInputs)).not.toContain("this_week");
+    expect(JSON.stringify(logs)).not.toContain(SECRET);
+  });
+
   it("準備リストの分野だけを選んでも、ほかのテーマの質問は足されない", async () => {
     const deps = createDeps();
     const view = await completeInterview(deps, SID_A);

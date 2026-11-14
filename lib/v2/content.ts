@@ -2,7 +2,7 @@
 // 面談のテーマと最初の質問は Notion「05｜TSUGU AI 2.0」の「面談テーマと質問例」の表のとおり。
 // 聞き返しは Notion「02｜一人で始めるAI面談」の表から取っている。AI が作る文章ではない。
 
-import type { ConsultantKey, OptionKey, PrepKey, PrepStatus, ThemeKey } from "./types";
+import type { ConsultantKey, OptionKey, PrepKey, PrepStatus, StepKey, ThemeKey, WhenKey } from "./types";
 
 export type ThemeDef = {
   key: ThemeKey;
@@ -239,6 +239,18 @@ export const DEFAULT_PURPOSE = "飲食店の今後と引き継ぎの準備につ
 export const MAX_TEXT = 1000;
 export const MAX_PURPOSE = 200;
 export const MAX_PREP_TEXT = 200;
+export const MAX_WHO = 40;
+
+export const WHENS: readonly { key: WhenKey; label: string }[] = [
+  { key: "this_week", label: "今週中" },
+  { key: "this_month", label: "今月中" },
+  { key: "three_months", label: "3か月以内" },
+  { key: "undecided", label: "時期はまだ決めない" },
+];
+
+export const WHEN_KEYS: readonly WhenKey[] = WHENS.map((w) => w.key);
+
+export const STEP_KEYS: readonly StepKey[] = [...PREP_KEYS, "consult"];
 
 /** AI の返事の中で、本人の言葉を引用するときの長さの上限 */
 export const QUOTE_MAX = 40;
