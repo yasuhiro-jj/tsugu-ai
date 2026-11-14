@@ -100,10 +100,10 @@ describe("相談の目的は本人が書き直せて、作成日が入る", () =
     const view = await completeInterview(deps, SID_A);
     const ids = [view.items[0].id];
     await service.setReportSettings(deps, SID_A, "bank", ids);
-    const before = service.getView(deps, SID_A)!;
+    const before = (await service.getView(deps, SID_A))!;
     await expect(service.setReportSettings(deps, SID_A, "bank", ids, "  ")).rejects.toBeInstanceOf(V2Error);
     await expect(service.setReportSettings(deps, SID_A, "bank", ids, "あ".repeat(201))).rejects.toBeInstanceOf(V2Error);
-    expect(service.getView(deps, SID_A)).toEqual(before);
+    expect((await service.getView(deps, SID_A))).toEqual(before);
   });
 });
 
@@ -194,7 +194,7 @@ describe("発言を消すと、面談の記録からも消える", () => {
     const after = await service.removeItem(deps, SID_A, target.id);
 
     expect(JSON.stringify(after)).not.toContain(WORD);
-    expect(JSON.stringify(deps.store.get(SID_A))).not.toContain(WORD);
+    expect(JSON.stringify((await deps.store.get(SID_A)))).not.toContain(WORD);
     // 同じテーマのもう1つの答えは残る
     expect(after.themes.staff.answers).toEqual(["staffの答え2"]);
     expect(after.themes.staff.answerIds).toHaveLength(1);
@@ -209,7 +209,7 @@ describe("発言を消すと、面談の記録からも消える", () => {
     for (const item of view.items.filter((i) => i.kind === "statement" && i.theme === "work")) {
       await service.removeItem(deps, SID_A, item.id);
     }
-    const after = service.getView(deps, SID_A)!;
+    const after = (await service.getView(deps, SID_A))!;
     expect(after.themes.work.answers).toEqual([]);
     expect(after.themes.work.status).toBe("skipped");
     const work = after.items.filter((i) => i.theme === "work");
@@ -227,7 +227,7 @@ describe("発言を消すと、面談の記録からも消える", () => {
     for (const item of view.items.filter((i) => i.kind === "statement" && i.theme === "work")) {
       await service.removeItem(deps, SID_A, item.id);
     }
-    const after = service.getView(deps, SID_A)!;
+    const after = (await service.getView(deps, SID_A))!;
     expect(after.items.some((i) => i.text === "自分で書いたメモ")).toBe(true);
   });
 
@@ -327,13 +327,13 @@ describe("消し残しを作らない（AI の返事・古い形・飛ばす・�
     await service.start(deps, SID_A);
     await service.answer(deps, SID_A, "古い答え");
     // 古い形：回答に ID がなく、会話の記録にも ID がない
-    const raw = deps.store.get(SID_A)!;
+    const raw = (await deps.store.get(SID_A))!;
     delete (raw.themes.legacy as unknown as { answerIds?: unknown }).answerIds;
     for (const turn of raw.log) {
       delete turn.answerId;
       delete turn.heardOf;
     }
-    deps.store.put(raw);
+    await deps.store.put(raw);
 
     await service.answer(deps, SID_A, "新しい答え");
     const view = await service.finishEarly(deps, SID_A);
@@ -345,12 +345,12 @@ describe("消し残しを作らない（AI の返事・古い形・飛ばす・�
     const newItem = view.items.find((i) => i.text === "新しい答え")!;
     expect(oldItem.answerId).toBeUndefined();
 
-    const before = service.getView(deps, SID_A)!;
+    const before = (await service.getView(deps, SID_A))!;
     await expect(service.removeItem(deps, SID_A, oldItem.id)).rejects.toMatchObject({
       code: "cannot_forget",
       message: expect.stringContaining("すべて消す"),
     });
-    expect(service.getView(deps, SID_A)).toEqual(before);
+    expect((await service.getView(deps, SID_A))).toEqual(before);
 
     // 新しい形の発言は、これまでどおり消せて、古い答えは巻き込まれない
     const after = await service.removeItem(deps, SID_A, newItem.id);
@@ -476,14 +476,14 @@ describe("準備リスト：確認済み／要確認／不明と、次に確認�
     expect(changed.items.find((i) => i.prepKey === "loans")!.id).not.toBe(oldId);
     // 古い画面が、古い ID のまま「載せる」を送る
     await expect(service.setReportSettings(deps, SID_A, "bank", [oldId])).rejects.toMatchObject({ status: 404 });
-    expect(service.getView(deps, SID_A)!.items.every((i) => i.selected === false)).toBe(true);
+    expect((await service.getView(deps, SID_A))!.items.every((i) => i.selected === false)).toBe(true);
     expect(deps.generatorInputs).toHaveLength(0);
   });
 
   it("想定外の形の指定（配列、文字でない値、特別な名前のキー）は受け付けない", async () => {
     const deps = createDeps();
     await completeInterview(deps, SID_A);
-    const before = service.getView(deps, SID_A)!;
+    const before = (await service.getView(deps, SID_A))!;
     for (const bad of [
       '{"loans":[]}',
       '{"loans":{"status":"todo","next":123}}',
@@ -496,17 +496,17 @@ describe("準備リスト：確認済み／要確認／不明と、次に確認�
     ]) {
       await expect(service.setPrep(deps, SID_A, JSON.parse(bad)), bad).rejects.toBeInstanceOf(V2Error);
     }
-    expect(service.getView(deps, SID_A)).toEqual(before);
+    expect((await service.getView(deps, SID_A))).toEqual(before);
     expect(({} as Record<string, unknown>).status).toBeUndefined();
   });
 
   it("準備リストを持たない古い形の面談を読んでも、止まらずに「まだ確認していません」として扱う", async () => {
     const deps = createDeps();
     await completeInterview(deps, SID_A);
-    const raw = deps.store.get(SID_A)!;
+    const raw = (await deps.store.get(SID_A))!;
     delete (raw as unknown as { prep?: unknown }).prep;
-    deps.store.put(raw);
-    expect(Object.values(service.getView(deps, SID_A)!.prep).every((e) => e.status === null)).toBe(true);
+    await deps.store.put(raw);
+    expect(Object.values((await service.getView(deps, SID_A))!.prep).every((e) => e.status === null)).toBe(true);
     const view = await service.setPrep(deps, SID_A, { loans: { status: "unknown" } });
     expect(view.prep.loans.status).toBe("unknown");
   });
@@ -514,7 +514,7 @@ describe("準備リスト：確認済み／要確認／不明と、次に確認�
   it("正しくない指定が1つでもあれば、何も変わらない", async () => {
     const deps = createDeps();
     await completeInterview(deps, SID_A);
-    const before = service.getView(deps, SID_A)!;
+    const before = (await service.getView(deps, SID_A))!;
     await expect(
       service.setPrep(deps, SID_A, { loans: { status: "todo" }, nothing: { status: "todo" } }),
     ).rejects.toBeInstanceOf(V2Error);
@@ -523,7 +523,7 @@ describe("準備リスト：確認済み／要確認／不明と、次に確認�
       service.setPrep(deps, SID_A, { loans: { status: "todo", next: "あ".repeat(201) } }),
     ).rejects.toBeInstanceOf(V2Error);
     await expect(service.setPrep(deps, SID_A, [])).rejects.toBeInstanceOf(V2Error);
-    expect(service.getView(deps, SID_A)).toEqual(before);
+    expect((await service.getView(deps, SID_A))).toEqual(before);
   });
 
   it("準備リストの項目は、内容の確認の画面からは直せない・外せない", async () => {
@@ -558,7 +558,7 @@ describe("次の一歩：やること・誰が・いつ頃を本人が選ぶ。�
       daily: { status: "confirmed", next: "手順をメモにする" },
     });
     await service.setReportSettings(deps, SID_A, "bank", []);
-    const steps = buildNextSteps(service.getView(deps, SID_A)!);
+    const steps = buildNextSteps((await service.getView(deps, SID_A))!);
     expect(steps.map((s) => [s.key, s.text])).toEqual([
       ["consult", "取引のある金融機関に連絡して、相談の日を決める"],
       ["daily", "手順をメモにする"],
@@ -573,7 +573,7 @@ describe("次の一歩：やること・誰が・いつ頃を本人が選ぶ。�
     const deps = createDeps();
     await completeInterview(deps, SID_A);
     await service.setReportSettings(deps, SID_A, "undecided", []);
-    expect(buildNextSteps(service.getView(deps, SID_A)!)).toEqual([]);
+    expect(buildNextSteps((await service.getView(deps, SID_A))!)).toEqual([]);
   });
 
   it("やる・今は保留を選べる。誰が・いつ頃は、やると決めたときだけ残る", async () => {
@@ -592,7 +592,7 @@ describe("次の一歩：やること・誰が・いつ頃を本人が選ぶ。�
   it("正しくない指定が1つでもあれば、何も変わらない", async () => {
     const deps = createDeps();
     await completeInterview(deps, SID_A);
-    const before = service.getView(deps, SID_A)!;
+    const before = (await service.getView(deps, SID_A))!;
     for (const bad of [
       '{"loans":{"decision":"must"}}',
       '{"loans":{"decision":"do","when":"tomorrow"}}',
@@ -608,7 +608,7 @@ describe("次の一歩：やること・誰が・いつ頃を本人が選ぶ。�
     await expect(
       service.setNextSteps(deps, SID_A, { permits: { decision: "do" }, loans: { decision: "do", who: "あ".repeat(41) } }),
     ).rejects.toBeInstanceOf(V2Error);
-    expect(service.getView(deps, SID_A)).toEqual(before);
+    expect((await service.getView(deps, SID_A))).toEqual(before);
   });
 
   it("準備リストの文章や相談先を変えたら、前のメモは持ち越さない", async () => {
@@ -695,13 +695,13 @@ describe("FUNC-06 中断・処理失敗で情報を作り足さず、再試行�
       },
     });
     await service.start(deps, SID_A);
-    const before = service.getView(deps, SID_A)!;
+    const before = (await service.getView(deps, SID_A))!;
     await expect(service.answer(deps, SID_A, "架空の答え")).rejects.toMatchObject({
       code: "ai_failed",
       status: 503,
       message: expect.stringContaining("もう一度お試しください"),
     });
-    expect(service.getView(deps, SID_A)).toEqual(before);
+    expect((await service.getView(deps, SID_A))).toEqual(before);
 
     fail = false;
     const after = await service.answer(deps, SID_A, "架空の答え");
@@ -712,7 +712,7 @@ describe("FUNC-06 中断・処理失敗で情報を作り足さず、再試行�
     const deps = createDeps({ ai: async () => ({ reply: "  ", action: "followup" }) });
     await service.start(deps, SID_A);
     await expect(service.answer(deps, SID_A, "架空の答え")).rejects.toMatchObject({ code: "ai_failed" });
-    expect(service.getView(deps, SID_A)!.log).toHaveLength(1);
+    expect((await service.getView(deps, SID_A))!.log).toHaveLength(1);
   });
 
   it("AI が聞き返しを続けようとしても、1テーマ1回で次へ進む", async () => {
@@ -736,7 +736,7 @@ describe("FUNC-06 中断・処理失敗で情報を作り足さず、再試行�
       code: "report_failed",
       message: expect.stringContaining("もう一度お試しください"),
     });
-    expect(service.getView(deps, SID_A)!.report).toBeNull();
+    expect((await service.getView(deps, SID_A))!.report).toBeNull();
   });
 
   it("面談を始めていない人の操作は受け付けない", async () => {
@@ -756,7 +756,7 @@ describe("FUNC-06 中断・処理失敗で情報を作り足さず、再試行�
     const deps = createDeps();
     await completeInterview(deps, SID_A);
     await service.reset(deps, SID_A);
-    expect(service.getView(deps, SID_A)).toBeNull();
-    expect(deps.store.size()).toBe(0);
+    expect((await service.getView(deps, SID_A))).toBeNull();
+    expect((await deps.store.size())).toBe(0);
   });
 });

@@ -97,7 +97,7 @@ describe("学びの記録を保存する", () => {
   it("正しくない指定は受け付けず、何も変わらない", async () => {
     const deps = createDeps();
     await service.saveLearning(deps, SID_A, "values", { notes: { kept: "元の内容" } });
-    const before = service.getView(deps, SID_A)!;
+    const before = (await service.getView(deps, SID_A))!;
     const cases: [unknown, unknown][] = [
       ["unknown-course", { quiz: "no" }],
       ["values", null],
@@ -118,15 +118,15 @@ describe("学びの記録を保存する", () => {
         V2Error,
       );
     }
-    expect(service.getView(deps, SID_A)).toEqual(before);
+    expect((await service.getView(deps, SID_A))).toEqual(before);
   });
 
   it("「すべて消す」で、学びの記録も残らない", async () => {
     const deps = createDeps();
     await service.saveLearning(deps, SID_A, "values", { notes: { kept: SECRET } });
     await service.reset(deps, SID_A);
-    expect(service.getView(deps, SID_A)).toBeNull();
-    expect(deps.store.size()).toBe(0);
+    expect((await service.getView(deps, SID_A))).toBeNull();
+    expect((await deps.store.size())).toBe(0);
   });
 });
 
@@ -165,13 +165,13 @@ describe("学びの記録は本人用。相談資料・記録・ほかの人に�
     expect(JSON.stringify(env.audit.list())).not.toContain(SECRET);
     expect(env.audit.list().filter((e) => e.action === "saveLearning" && e.outcome === "ok")).toHaveLength(2);
     // 講座から始めた人の入れ物にも、持ち主が記録される
-    expect(env.deps.store.size()).toBe(2);
+    expect((await env.deps.store.size())).toBe(2);
   });
 
   it("別のセッションの記録は、内容も存在も見えない", async () => {
     const deps = createDeps();
     await service.saveLearning(deps, SID_A, "values", { notes: { kept: SECRET } });
-    expect(service.getView(deps, SID_B)).toBeNull();
+    expect((await service.getView(deps, SID_B))).toBeNull();
     expect(JSON.stringify(await service.start(deps, SID_B))).not.toContain(SECRET);
   });
 });

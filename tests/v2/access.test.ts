@@ -64,7 +64,7 @@ describe("SEC-01 別の会社の面談・資料を指定しても、読めない
     const done = await prepareA1(env, a1);
     const aKey = interviewKey((await env.auth.resolve(a1))!);
     const item = done.items[0];
-    const before = JSON.stringify(env.deps.store.get(aKey));
+    const before = JSON.stringify((await env.deps.store.get(aKey)));
     expect(before).toContain(SECRET);
 
     // 読み取り
@@ -86,7 +86,7 @@ describe("SEC-01 別の会社の面談・資料を指定しても、読めない
       );
     }
     // A社の内容は何も変わっていない
-    expect(JSON.stringify(env.deps.store.get(aKey))).toBe(before);
+    expect(JSON.stringify((await env.deps.store.get(aKey)))).toBe(before);
     // B社の人には、面談が1つも作られていない
     expect(await view(env, b1)).toBeNull();
   });
@@ -140,7 +140,7 @@ describe("SEC-01 別の会社の面談・資料を指定しても、読めない
       owner: { tenantId: "tenant-a", userId: "a1" },
     });
     expect(JSON.stringify(session)).not.toContain(SECRET);
-    expect(env.deps.store.get("tenant-b/b1")!.owner).toEqual({ tenantId: "tenant-b", userId: "b1" });
+    expect((await env.deps.store.get("tenant-b/b1"))!.owner).toEqual({ tenantId: "tenant-b", userId: "b1" });
   });
 });
 
@@ -151,7 +151,7 @@ describe("SEC-02 同じ会社の別の人の面談は、内容も存在も見え
     const a2 = directory.login("a2");
     await prepareA1(env, a1);
     const aKey = interviewKey((await env.auth.resolve(a1))!);
-    const before = JSON.stringify(env.deps.store.get(aKey));
+    const before = JSON.stringify((await env.deps.store.get(aKey)));
 
     expect(await view(env, a2)).toBeNull();
     await expectHidden(() => view(env, a2, aKey));
@@ -160,7 +160,7 @@ describe("SEC-02 同じ会社の別の人の面談は、内容も存在も見え
     // a2 が自分の面談を始めても、a1 の内容は混ざらない
     const own = await handle(env, a2, { action: "start" });
     expect(JSON.stringify(own)).not.toContain(SECRET);
-    expect(JSON.stringify(env.deps.store.get(aKey))).toBe(before);
+    expect(JSON.stringify((await env.deps.store.get(aKey)))).toBe(before);
   });
 
   it("運営担当者は、面談や資料の中身を見られない・操作できない", async () => {
@@ -176,7 +176,7 @@ describe("SEC-02 同じ会社の別の人の面談は、内容も存在も見え
       await expect(handle(env, ops, { action, interviewId: aKey })).rejects.toMatchObject({ status: 403 });
       await expect(handle(env, ops, { action })).rejects.toMatchObject({ status: 403 });
     }
-    expect(env.deps.store.get("tenant-a/a-ops")).toBeNull();
+    expect((await env.deps.store.get("tenant-a/a-ops"))).toBeNull();
   });
 
   it("保存してある持ち主と合わない面談は、置き場所の名前が合っていても渡さない", async () => {
@@ -184,14 +184,14 @@ describe("SEC-02 同じ会社の別の人の面談は、内容も存在も見え
     const a1 = directory.login("a1");
     await prepareA1(env, a1);
     // 保存先の持ち主の記録だけが、別の人になっている（保存先の取り違えを想定）
-    const raw = env.deps.store.get("tenant-a/a1")!;
+    const raw = (await env.deps.store.get("tenant-a/a1"))!;
     raw.owner = { tenantId: "tenant-b", userId: "b1" };
-    env.deps.store.put(raw);
+    await env.deps.store.put(raw);
     await expectHidden(() => view(env, a1));
     await expectHidden(handle(env, a1, { action: "generateReport" }));
     // 持ち主の記録がない（古い形の）面談も、渡さない
     delete raw.owner;
-    env.deps.store.put(raw);
+    await env.deps.store.put(raw);
     await expectHidden(() => view(env, a1));
   });
 
@@ -234,7 +234,7 @@ describe("SEC-04 ログアウト・期限切れ・所属を外した後・役割
     directory.removeMember("a1");
     await expect(view(env, a1)).rejects.toMatchObject({ status: 401 });
     await expect(handle(env, a1, { action: "reset" })).rejects.toMatchObject({ status: 401 });
-    expect(env.deps.store.get("tenant-a/a1")).not.toBeNull();
+    expect((await env.deps.store.get("tenant-a/a1"))).not.toBeNull();
   });
 
   it("役割を変えた直後から、新しい役割で判断する（古い権限を使い回さない）", async () => {
@@ -253,7 +253,7 @@ describe("SEC-04 ログアウト・期限切れ・所属を外した後・役割
       await expect(view(env, token)).rejects.toMatchObject({ status: 401 });
       await expect(handle(env, token, { action: "start" })).rejects.toMatchObject({ status: 401 });
     }
-    expect(env.deps.store.size()).toBe(0);
+    expect((await env.deps.store.size())).toBe(0);
   });
 });
 
@@ -309,8 +309,8 @@ describe("置き場所の取り違え・古い合言葉・保存先がいっぱ�
     const key = "tenant-a/a1";
     // 本人の確認が終わったあと、処理が保存先を読むまでの間に、持ち主の記録が別の人に変わった、という状況を作る
     const realGet = env.deps.store.get.bind(env.deps.store);
-    env.deps.store.get = (id: string) => {
-      const session = realGet(id);
+    env.deps.store.get = async (id: string) => {
+      const session = await realGet(id);
       if (session && id === key) session.owner = { tenantId: "tenant-b", userId: "b1" };
       return session;
     };
@@ -347,7 +347,7 @@ describe("置き場所の取り違え・古い合言葉・保存先がいっぱ�
     // 先に始めた人の面談は残っていて、続けられる
     expect(JSON.stringify(await view(env, a1))).toContain(SECRET);
     expect((await handle(env, a1, { action: "skip" }))!.currentTheme).toBe("future");
-    expect(env.deps.store.size()).toBe(2);
+    expect((await env.deps.store.size())).toBe(2);
   });
 });
 
@@ -405,7 +405,7 @@ describe("手元の試作用の認証（ログインなし）", () => {
     const env: Env = { deps: createDeps(), auth: createLocalAuth(), audit: createAuditLog() };
     await handle(env, token, { action: "start" });
     const actor = (await env.auth.resolve(token))!;
-    const stored = JSON.stringify(env.deps.store.get(interviewKey(actor)));
+    const stored = JSON.stringify((await env.deps.store.get(interviewKey(actor))));
     expect(stored).not.toContain(token);
     expect(JSON.stringify(env.audit.list())).not.toContain(token);
     expect(actor.role).toBe("owner");

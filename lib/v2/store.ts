@@ -3,12 +3,37 @@
 
 import type { Session } from "./types";
 
+type Awaitable<T> = T | Promise<T>;
+
+/**
+ * 面談の保存先。メモリ（手元の試作）でも、データベース（lib/v2/store-libsql.ts）でも同じ形で使う。
+ * データベースは返事を待つ必要があるので、呼ぶ側は必ず待つ（await）。
+ */
 export type V2Store = {
+  get(id: string): Awaitable<Session | null>;
+  put(session: Session): Awaitable<void>;
+  delete(id: string): Awaitable<void>;
+  size(): Awaitable<number>;
+};
+
+/** メモリの保存先。待たずに使える（テストで中身を直接確かめるため） */
+export type MemoryStore = {
   get(id: string): Session | null;
   put(session: Session): void;
   delete(id: string): void;
   size(): number;
 };
+
+/**
+ * 読んだあとで、ほかの操作が先に保存していた（同じ面談を、別の画面や別のサーバーが同時に変えた）。
+ * 上書きして相手の変更を消さないよう、保存を断る
+ */
+export class StoreConflictError extends Error {
+  constructor() {
+    super("store_conflict");
+    this.name = "StoreConflictError";
+  }
+}
 
 /** 保存先がいっぱいで、新しい面談を受け付けられない */
 export class StoreFullError extends Error {
@@ -21,7 +46,7 @@ export class StoreFullError extends Error {
 const DEFAULT_MAX_SESSIONS = 500;
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
-export function createMemoryStore(opts?: { maxSessions?: number; ttlMs?: number; nowMs?: () => number }): V2Store {
+export function createMemoryStore(opts?: { maxSessions?: number; ttlMs?: number; nowMs?: () => number }): MemoryStore {
   const max = opts?.maxSessions ?? DEFAULT_MAX_SESSIONS;
   const ttl = opts?.ttlMs ?? DEFAULT_TTL_MS;
   const nowMs = opts?.nowMs ?? (() => Date.now());
