@@ -263,18 +263,24 @@ describe("ほかの人の面談に触れられない（試作の範囲。本人�
 });
 
 describe("保存先（メモリ）の上限と期限", () => {
-  it("上限を超えると古いものから消え、期限を過ぎると消える", async () => {
+  it("上限に達したら新しい面談を断り（既存は消さない）、期限を過ぎると消える", async () => {
     const { createMemoryStore } = await import("@/lib/v2/store");
     let now = 0;
     const store = createMemoryStore({ maxSessions: 2, ttlMs: 1000, nowMs: () => now });
     const deps = createDeps({ store });
     await service.start(deps, "s1");
     await service.start(deps, "s2");
-    await service.start(deps, "s3");
-    expect(store.get("s1")).toBeNull();
+    await expect(service.start(deps, "s3")).rejects.toMatchObject({ code: "busy", status: 503 });
+    expect(store.get("s1")).not.toBeNull();
+    expect(store.get("s3")).toBeNull();
     expect(store.size()).toBe(2);
+    // すでにある面談の更新は、いっぱいでも受け付ける
+    await service.skip(deps, "s1");
     now = 5000;
     expect(store.size()).toBe(0);
+    // 期限で空いたら、また始められる
+    await service.start(deps, "s3");
+    expect(store.size()).toBe(1);
   });
 });
 

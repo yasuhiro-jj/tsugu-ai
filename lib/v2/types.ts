@@ -106,6 +106,8 @@ export type Phase = "interview" | "review";
 
 export type Session = {
   id: string;
+  /** 持ち主（会社と本人）。権限確認で照らし合わせる。画面へは返さない */
+  owner?: { tenantId: string; userId: string };
   createdAt: string;
   updatedAt: string;
   phase: Phase;
@@ -125,8 +127,8 @@ export type Session = {
   report: Report | null;
 };
 
-/** 画面へ返す形。セッション ID は返さない（httpOnly クッキーだけで持つ） */
-export type SessionView = Omit<Session, "id">;
+/** 画面へ返す形。置き場所の ID と持ち主の ID は返さない */
+export type SessionView = Omit<Session, "id" | "owner">;
 
 /** 資料生成に渡す入力。本人が選んだ項目だけが入る */
 export type ReportInput = {
