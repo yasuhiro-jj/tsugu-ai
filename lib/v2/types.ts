@@ -102,6 +102,16 @@ export type StepChoice = {
   when: WhenKey | null;
 };
 
+/** 講座ごとの、本人の学びの記録。本人用のメモで、相談資料には入れない */
+export type LearningEntry = {
+  /** 確認問題で選んだ答え（まだなら null） */
+  quiz: "yes" | "no" | null;
+  /** 自分のメモ（欄の名前 → 書いた文章） */
+  notes: Record<string, string>;
+  /** 確認リスト（欄の名前 → はい／いいえ／未確認） */
+  checks: Record<string, "yes" | "no" | "unknown">;
+};
+
 export type Phase = "interview" | "review";
 
 export type Session = {
@@ -119,6 +129,8 @@ export type Session = {
   reviewConfirmed: boolean;
   prep: Record<PrepKey, PrepEntry>;
   options: OptionKey[];
+  /** 講座の学びの記録（講座の ID → 記録）。本人用のメモで、相談資料には入れない */
+  learning: Record<string, LearningEntry>;
   /** 「次の一歩」で本人が選んだこと。本人用のメモで、相談資料には入れない */
   steps: Partial<Record<StepKey, StepChoice>>;
   consultant: ConsultantKey | null;

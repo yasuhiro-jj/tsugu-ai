@@ -89,7 +89,8 @@ export async function POST(req: NextRequest) {
     // その人の回答が他人の面談に書かれるおそれがある。ログインがない以上、ここでは防ぎきれない。
     if (sid && !(await hasInterview(env, sid))) sid = null;
     if (!sid) {
-      if (input.action !== "start") {
+      // 入れ物がなくても始められるのは、「面談を始める」と「講座の記録を保存する」だけ
+      if (input.action !== "start" && input.action !== "saveLearning") {
         recordRefusal(env, input.action, "no_session");
         return fail(409, "面談がまだ始まっていません。最初の画面から始めてください。");
       }
