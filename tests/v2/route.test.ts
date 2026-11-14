@@ -66,6 +66,17 @@ describe("公開先（Vercel）では止まる", () => {
   });
 });
 
+describe("公開用に組み立てたもの（本番ビルド）では止まる", () => {
+  it("Vercel 以外の場所でも、開発用に動かしているとき以外は 503", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const { GET, POST } = await load();
+    expect((await GET()).status).toBe(503);
+    expect((await POST(post({ action: "start" }))).status).toBe(503);
+    expect(setCalls).toHaveLength(0);
+    expect((globalThis as { __tsuguV2Store?: unknown }).__tsuguV2Store).toBeUndefined();
+  });
+});
+
 describe("送信元と形式の確認", () => {
   it("ほかのサイトからの操作は 403", async () => {
     const { POST } = await load();
@@ -174,6 +185,9 @@ describe("新しく始める回数の上限", () => {
       if (res.status === 429) limited++;
     }
     expect(limited).toBe(11);
+    // 入口で断った操作も、種類だけ記録に残る
+    const { getEnv } = await import("@/lib/v2/runtime");
+    expect(getEnv().audit.list().filter((e) => e.code === "rate_limited" && e.outcome === "denied")).toHaveLength(11);
     jar.clear();
     jar.set(COOKIE, mine);
     const kept = await (await GET()).json();

@@ -10,6 +10,14 @@ export type V2Store = {
   size(): number;
 };
 
+/** 保存先がいっぱいで、新しい面談を受け付けられない */
+export class StoreFullError extends Error {
+  constructor() {
+    super("store_full");
+    this.name = "StoreFullError";
+  }
+}
+
 const DEFAULT_MAX_SESSIONS = 500;
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -35,13 +43,10 @@ export function createMemoryStore(opts?: { maxSessions?: number; ttlMs?: number;
     },
     put(session) {
       sweep();
+      // いっぱいのときは、すでにある面談を消さずに、新しい面談を断る
+      // （大量に始められて、ほかの人の面談が押し出されることがないように）
+      if (!map.has(session.id) && map.size >= max) throw new StoreFullError();
       map.delete(session.id);
-      // 上限を超えたら古いものから消す（メモリの使い切りを防ぐ）
-      while (map.size >= max) {
-        const oldest = map.keys().next().value;
-        if (oldest === undefined) break;
-        map.delete(oldest);
-      }
       map.set(session.id, { session: structuredClone(session), touchedAt: nowMs() });
     },
     delete(id) {

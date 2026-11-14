@@ -29,7 +29,7 @@ import {
   themeDef,
 } from "./content";
 import { echo, safeQuestion } from "./echo";
-import type { V2Store } from "./store";
+import { StoreFullError, type V2Store } from "./store";
 import {
   V2Error,
   type ConsultantKey,
@@ -57,6 +57,11 @@ export type Deps = {
   generator: ReportGenerator;
   now: () => string;
   newId: () => string;
+  /**
+   * 権限確認を通った操作のとき：この面談の持ち主であるはずの人。
+   * 渡されたときは、面談を読むたびに保存してある持ち主と照らし合わせ、合わなければ「ない」として扱う
+   */
+  expectOwner?: NonNullable<Session["owner"]>;
 };
 
 const EMPTY_PREP: PrepEntry = { status: null, next: "", basis: "" };
@@ -107,9 +112,21 @@ function fillPrep(session: Session): Session {
   return session;
 }
 
+const NO_SESSION = "面談がまだ始まっていません。最初の画面から始めてください。";
+
+/** 保存してある持ち主が、権限確認を通った人と同じか。違えば「ない」ときと同じ返事で断る */
+function checkOwner(deps: Deps, session: Session) {
+  const expected = deps.expectOwner;
+  if (!expected) return;
+  if (session.owner?.tenantId !== expected.tenantId || session.owner?.userId !== expected.userId) {
+    throw new V2Error("not_yours", NO_SESSION, 409);
+  }
+}
+
 function load(deps: Deps, sid: string): Session {
   const session = deps.store.get(sid);
-  if (!session) throw new V2Error("no_session", "面談がまだ始まっていません。最初の画面から始めてください。", 409);
+  if (!session) throw new V2Error("no_session", NO_SESSION, 409);
+  checkOwner(deps, session);
   return fillPrep(session);
 }
 
@@ -224,14 +241,20 @@ export function buildReportInput(session: Session): ReportInput {
 
 export function getView(deps: Deps, sid: string): SessionView | null {
   const session = deps.store.get(sid);
-  return session ? toView(fillPrep(session)) : null;
+  if (!session) return null;
+  checkOwner(deps, session);
+  return toView(fillPrep(session));
 }
 
 /** 面談を始める。すでに始めていれば続きから（中断しても同じ場所に戻れる） */
 export function start(deps: Deps, sid: string, owner?: Session["owner"]): Promise<SessionView> {
   return withLock(sid, async () => {
     const existing = deps.store.get(sid);
-    if (existing) return toView(existing);
+    if (existing) {
+      checkOwner(deps, existing);
+      return toView(fillPrep(existing));
+    }
+    owner ??= deps.expectOwner;
     const now = deps.now();
     const themes = Object.fromEntries(
       THEME_KEYS.map((k) => [k, { status: "not_started", answers: [], answerIds: [], followupAsked: false }]),
@@ -255,7 +278,14 @@ export function start(deps: Deps, sid: string, owner?: Session["owner"]): Promis
       report: null,
     };
     advance(deps, session, `${INTRO}\n\n`);
-    return save(deps, session);
+    try {
+      return save(deps, session);
+    } catch (e) {
+      if (e instanceof StoreFullError) {
+        throw new V2Error("busy", "ただいま混み合っています。少し時間をおいて、もう一度お試しください。", 503);
+      }
+      throw e;
+    }
   });
 }
 

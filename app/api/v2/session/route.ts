@@ -3,7 +3,7 @@
 // 本文（回答・資料）はログに出さない。
 
 import { NextResponse, type NextRequest } from "next/server";
-import { handle, hasInterview, view } from "@/lib/v2/access";
+import { handle, hasInterview, recordRefusal, view } from "@/lib/v2/access";
 import {
   allowNewInterview,
   clearSessionId,
@@ -42,7 +42,7 @@ export async function GET() {
   const sid = await readSessionId();
   try {
     // 権限確認を通して読む（本人のもの以外は返らない）
-    const session = sid ? view(getEnv(), sid) : null;
+    const session = sid ? await view(getEnv(), sid) : null;
     return NextResponse.json({ ok: true, session }, { headers: NO_STORE });
   } catch (e) {
     if (e instanceof V2Error) return fail(e.status, e.message);
@@ -53,7 +53,10 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   if (!isLocalOnly()) return fail(503, LOCAL_ONLY_MESSAGE);
-  if (!isSameOrigin(req)) return fail(403, "この操作は受け付けられません。");
+  if (!isSameOrigin(req)) {
+    recordRefusal(getEnv(), undefined, "cross_origin");
+    return fail(403, "この操作は受け付けられません。");
+  }
   if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) {
     return fail(415, "送信の形式が正しくありません。");
   }
@@ -79,11 +82,22 @@ export async function POST(req: NextRequest) {
     let sid = await readSessionId();
     // サーバーが発行して保存してある ID だけを使う。
     // 保存先にない ID（外から入れられた ID を含む）では面談を作らず、始めるときに必ず新しく発行する
-    if (sid && !hasInterview(env, sid)) sid = null;
+    //
+    // 注意：この流れは、ログインのない手元の試作用。本物の認証につなぐときは作り直す
+    // （「面談がまだない人」の合言葉を捨てない。ログインのたびに合言葉を発行し直す）。
+    // いまの作りでは、他人が自分で始めた面談の ID を別の人のブラウザに入れられる場合、
+    // その人の回答が他人の面談に書かれるおそれがある。ログインがない以上、ここでは防ぎきれない。
+    if (sid && !(await hasInterview(env, sid))) sid = null;
     if (!sid) {
-      if (input.action !== "start") return fail(409, "面談がまだ始まっていません。最初の画面から始めてください。");
-      // 短時間に大量に始められて、ほかの人の面談が押し出されるのを防ぐ
-      if (!allowNewInterview()) return fail(429, "ただいま混み合っています。少し時間をおいて、もう一度お試しください。");
+      if (input.action !== "start") {
+        recordRefusal(env, input.action, "no_session");
+        return fail(409, "面談がまだ始まっていません。最初の画面から始めてください。");
+      }
+      // 短時間に大量に始められるのを遅らせる
+      if (!allowNewInterview()) {
+        recordRefusal(env, input.action, "rate_limited");
+        return fail(429, "ただいま混み合っています。少し時間をおいて、もう一度お試しください。");
+      }
       sid = await issueSessionId();
     }
     // 権限確認（本人・役割・対象）を通してから、面談の処理へ進む

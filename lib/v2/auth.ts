@@ -21,7 +21,7 @@ export type Actor = {
 
 export type AuthProvider = {
   /** 合言葉が有効なら、いまの本人・所属・役割を返す。無効・期限切れ・所属なしは null */
-  resolve(token: string | null): Actor | null;
+  resolve(token: string | null): Actor | null | Promise<Actor | null>;
 };
 
 /**
@@ -81,6 +81,10 @@ export function createDirectoryAuth(opts: {
       },
     },
     addUser(userId, tenantId, role = "owner") {
+      // 登録し直すときは、それまでの合言葉を破棄する（別の会社の権限で使い回されないように）
+      for (const [token, session] of sessions) {
+        if (session.userId === userId) sessions.delete(token);
+      }
       users.set(userId, { tenantId, role, active: true });
     },
     login(userId) {
@@ -96,6 +100,10 @@ export function createDirectoryAuth(opts: {
     removeMember(userId) {
       const user = users.get(userId);
       if (user) user.active = false;
+      // 合言葉そのものも破棄する（あとで所属を戻したり、別の会社に登録し直したりしても、古い合言葉は使えない）
+      for (const [token, session] of sessions) {
+        if (session.userId === userId) sessions.delete(token);
+      }
     },
     setRole(userId, role) {
       const user = users.get(userId);
