@@ -525,3 +525,19 @@ body:has(.v2) {
   color: var(--v2-success);
   font-weight: 600;
 }
+
+/* 面談：AI が本人の言葉を引用して受け止めた一文（質問と分けて表示する） */
+.v2-heard {
+  display: block;
+  margin-bottom: 0.75rem;
+  color: var(--v2-muted);
+}
+
+/* 選択肢：判断は保留、の案内 */
+.v2-option__hold {
+  display: block;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--v2-hairline);
+  font-size: 0.9rem;
+}

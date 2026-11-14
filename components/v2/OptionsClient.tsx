@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { OPTIONS } from "@/lib/v2/content";
+import { buildOptionGuides } from "@/lib/v2/option-guides";
 import type { OptionKey } from "@/lib/v2/types";
 import { ErrorBox, Guide, Loading, Steps } from "./Shared";
 import { useV2Session } from "./use-session";
@@ -47,7 +47,7 @@ export default function OptionsClient() {
       <ErrorBox message={error} />
 
       <div className="v2-options">
-        {OPTIONS.map((o) => {
+        {buildOptionGuides(session).map((o) => {
           const on = chosen.includes(o.key);
           return (
             <label key={o.key} className={on ? "card v2-option v2-option--on" : "card v2-option"}>
@@ -61,6 +61,23 @@ export default function OptionsClient() {
                   <li key={c}>{c}</li>
                 ))}
               </ul>
+              {o.pending.length > 0 && (
+                <>
+                  <span className="muted">あなたの準備リストから（まだ確かめていないこと）</span>
+                  <ul>
+                    {o.pending.map((p) => (
+                      <li key={p.key}>
+                        {p.label}：{p.state}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              <span className="v2-option__hold">
+                {o.hold
+                  ? "確かめていないことがあるため、この道が合うかどうかの判断は保留です。"
+                  : "関係する分野は、ご本人の申告では確認済みです（TSUGU AI は資料を確かめていません）。合うかどうかは、相談先と一緒に考えます。"}
+              </span>
             </label>
           );
         })}

@@ -13,7 +13,8 @@ export const KIND_LABELS: Record<ItemKind, string> = {
 };
 
 export const KIND_HELP: Record<ItemKind, string> = {
-  statement: "面談で入力した文章そのままです。",
+  statement:
+    "面談で入力した文章そのままです。「直す」は、ここに並んだ文章だけを直します（面談の記録はそのまま残ります）。「消す」を押すと、面談の記録からも消えます。",
   ai_note: "AIがまとめた案です。事実とは限りません。違っていたら直すか、候補から外してください。",
   unconfirmed: "まだ確かめていないことです。「問題なし」という意味ではありません。",
   option: "知りたい選択肢です。決めたわけではありません。",

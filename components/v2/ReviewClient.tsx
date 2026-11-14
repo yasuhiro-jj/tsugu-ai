@@ -36,6 +36,17 @@ export default function ReviewClient() {
     if (await act("editItem", { itemId: item.id, text: draft })) setEditingId(null);
   }
 
+  async function remove(item: Item) {
+    // 本人の発言は、面談の記録からも消える。元に戻せないので、確かめてから消す
+    if (
+      item.kind === "statement" &&
+      !window.confirm("この発言を、面談の記録からも消します。元に戻せません。よろしいですか？")
+    ) {
+      return;
+    }
+    await act("removeItem", { itemId: item.id });
+  }
+
   async function confirm() {
     if (await act("confirmReview")) router.push("/v2/prep");
   }
@@ -45,7 +56,7 @@ export default function ReviewClient() {
       <Steps current={1} />
       <h1 className="page-title">内容の確認</h1>
       <p className="lead">
-        面談の内容を3つに分けて並べました。違っているところは直し、資料の候補にしたくないものは外してください。ここではまだ、誰にも見せていません。
+        面談の内容を3つに分けて並べました。違っているところは直してください。残したくない発言は「消す」で、面談の記録からも消せます。ここではまだ、誰にも見せていません。
       </p>
       <ErrorBox message={error} />
 
@@ -114,10 +125,10 @@ export default function ReviewClient() {
                             className="button button--secondary button--danger button--small"
                             type="button"
                             disabled={busy}
-                            aria-label={`候補から外す：${item.text}`}
-                            onClick={() => void act("removeItem", { itemId: item.id })}
+                            aria-label={`${kind === "statement" ? "消す" : "候補から外す"}：${item.text}`}
+                            onClick={() => void remove(item)}
                           >
-                            候補から外す
+                            {kind === "statement" ? "消す" : "候補から外す"}
                           </button>
                         </div>
                       </div>

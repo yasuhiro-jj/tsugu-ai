@@ -28,6 +28,7 @@ import {
   THEME_KEYS,
   themeDef,
 } from "./content";
+import { echo, safeQuestion } from "./echo";
 import type { V2Store } from "./store";
 import {
   V2Error,
@@ -47,6 +48,7 @@ import {
   type SessionView,
   type ThemeKey,
   type ThemeState,
+  type Turn,
 } from "./types";
 
 export type Deps = {
@@ -94,6 +96,14 @@ function fillPrep(session: Session): Session {
   session.prep ??= {} as Record<PrepKey, PrepEntry>;
   for (const key of PREP_KEYS) session.prep[key] ??= { ...EMPTY_PREP };
   session.steps ??= {};
+  for (const key of THEME_KEYS) {
+    const state = session.themes[key];
+    state.answerIds ??= [];
+    // 古い形で保存された回答には ID がない。並びがずれないよう、古い回答の位置を空の ID で埋める
+    // （ID は新しい回答ほど後ろに付くので、足りない分は前に入れる）
+    const missing = state.answers.length - state.answerIds.length;
+    if (missing > 0) state.answerIds = [...Array<string>(missing).fill(""), ...state.answerIds];
+  }
   return session;
 }
 
@@ -114,18 +124,22 @@ function nextTheme(session: Session): ThemeKey | null {
 }
 
 /** 次のテーマの質問を出す。残りがなければ本人確認用の整理案を作って面談を終える */
-function advance(deps: Deps, session: Session, prefix: string) {
+function advance(deps: Deps, session: Session, prefix: string): Turn | null {
   const next = nextTheme(session);
   if (next) {
     session.currentTheme = next;
     session.themes[next].status = "in_progress";
-    session.log.push({ who: "ai", theme: next, text: `${prefix}${themeDef(next).question}` });
-    return;
+    const turn: Turn = { who: "ai", theme: next, text: `${prefix}${themeDef(next).question}` };
+    session.log.push(turn);
+    return turn;
   }
   session.currentTheme = null;
   session.phase = "review";
   session.items = buildReviewItems(session.themes, deps.newId);
+  return null;
 }
+
+
 
 /** 準備リストの1分野を、資料に載せる1行の文章にする。本人が選んだ状態と書いた言葉だけを使う */
 export function prepText(key: PrepKey, entry: PrepEntry): string {
@@ -169,7 +183,11 @@ export function buildReviewItems(themes: Record<ThemeKey, ThemeState>, newId: ()
     const state = themes[key];
     const def = themeDef(key);
     if (state.answers.length > 0) {
-      for (const answer of state.answers) add("statement", key, answer);
+      state.answers.forEach((answer, i) => {
+        add("statement", key, answer);
+        const id = state.answerIds?.[i];
+        if (id) items[items.length - 1].answerId = id;
+      });
       add("ai_note", key, def.aiNote);
     } else {
       add("unconfirmed", key, `「${def.label}」については、面談で答えていません。`);
@@ -216,7 +234,7 @@ export function start(deps: Deps, sid: string): Promise<SessionView> {
     if (existing) return toView(existing);
     const now = deps.now();
     const themes = Object.fromEntries(
-      THEME_KEYS.map((k) => [k, { status: "not_started", answers: [], followupAsked: false }]),
+      THEME_KEYS.map((k) => [k, { status: "not_started", answers: [], answerIds: [], followupAsked: false }]),
     ) as unknown as Record<ThemeKey, ThemeState>;
     const session: Session = {
       id: sid,
@@ -262,17 +280,27 @@ export function answer(deps: Deps, sid: string, rawText: unknown): Promise<Sessi
       throw new V2Error("ai_failed", `うまく処理できませんでした。${RETRY_HINT}`, 503);
     }
 
+    const answerId = deps.newId();
     state.answers = answers;
-    session.log.push({ who: "me", theme: key, text });
+    state.answerIds = [...state.answerIds, answerId];
+    session.log.push({ who: "me", theme: key, text, answerId });
+    // 受け止めの一文（本人の言葉の引用）は、AI に任せず、今回の回答だけから作る。
+    // 質問とは別に持ち、その発言を消したら引用も消せるようにする
+    const heard = echo(text);
+    let aiTurn: Turn | null;
     // 聞き返しは1テーマ1回まで（AI の返事にかかわらず、ここで止める）
     if (reply.action === "followup" && !state.followupAsked) {
       state.followupAsked = true;
-      session.log.push({ who: "ai", theme: key, text: reply.reply.trim() });
+      // AI の聞き返しに本人の言葉が混ざっていたら使わず、決まった質問に戻す
+      aiTurn = { who: "ai", theme: key, text: safeQuestion(reply.reply, answers, themeDef(key).followup) };
+      session.log.push(aiTurn);
     } else {
       state.status = "answered";
-      // 聞き返し以外の返事（受け止めの言葉）は、次の質問の前に添える。質問は1つだけにする
-      const heard = reply.action === "next_theme" ? `${reply.reply.trim()}\n\n` : "";
-      advance(deps, session, `${heard}ありがとうございます。次の質問です。\n\n`);
+      aiTurn = advance(deps, session, "ありがとうございます。次の質問です。\n\n");
+    }
+    if (aiTurn) {
+      aiTurn.heard = heard;
+      aiTurn.heardOf = answerId;
     }
     return save(deps, session);
   });
@@ -345,12 +373,61 @@ export function editItem(deps: Deps, sid: string, itemId: unknown, rawText: unkn
   });
 }
 
+/**
+ * 本人の発言を、面談の記録からも消す。
+ * - 回答の原文、会話の記録の該当の発言、AI がその言葉を引用した一文を消す
+ * - そのテーマの答えが1つも残らなくなったら、AI の整理案（本人が直していないもの）も消し、
+ *   「答えが残っていません」を未確認として残す（黙って無かったことにしない）
+ */
+function forgetAnswer(deps: Deps, session: Session, theme: ThemeKey, answerId: string) {
+  const state = session.themes[theme];
+  const index = state.answerIds.indexOf(answerId);
+  if (index >= 0) {
+    state.answers.splice(index, 1);
+    state.answerIds.splice(index, 1);
+  }
+  session.log = session.log.filter((t) => t.answerId !== answerId);
+  for (const turn of session.log) {
+    if (turn.heardOf === answerId) {
+      delete turn.heard;
+      delete turn.heardOf;
+    }
+  }
+  if (state.answers.length === 0) {
+    state.status = "skipped";
+    session.items = session.items.filter((i) => !(i.kind === "ai_note" && i.theme === theme && !i.edited));
+    if (!session.items.some((i) => i.kind === "unconfirmed" && i.theme === theme)) {
+      session.items.push({
+        id: deps.newId(),
+        kind: "unconfirmed",
+        theme,
+        text: `「${themeDef(theme).label}」については、答えが残っていません。`,
+        edited: false,
+        selected: false,
+      });
+    }
+  }
+}
+
+/** 項目を外す。本人の発言は、面談の記録からも消す */
 export function removeItem(deps: Deps, sid: string, itemId: unknown): Promise<SessionView> {
   return withLock(sid, async () => {
     const session = load(deps, sid);
     requireReview(session);
     const item = findItem(session, itemId);
     rejectPrep(item);
+    if (item.kind === "statement") {
+      // 古い形で保存された発言は、面談の記録のどこにあるかを確かめられない。
+      // 「記録からも消す」と言って消し残すことがないよう、個別には消さない
+      if (!item.answerId || !item.theme || !session.themes[item.theme].answerIds.includes(item.answerId)) {
+        throw new V2Error(
+          "cannot_forget",
+          "この発言は古い形で保存されているため、個別には消せません。消したいときは「すべて消す」を使ってください。",
+          409,
+        );
+      }
+      forgetAnswer(deps, session, item.theme, item.answerId);
+    }
     session.items = session.items.filter((i) => i.id !== item.id);
     session.report = null;
     return save(deps, session);
@@ -407,6 +484,8 @@ export function setPrep(deps: Deps, sid: string, raw: unknown): Promise<SessionV
         item.text = text;
         item.selected = false;
         item.id = deps.newId();
+        // 「次の一歩」のメモは、前の文章に対して選んだもの。文章が変わったら持ち越さない
+        delete session.steps[key];
       }
     }
     session.report = null;
@@ -507,6 +586,8 @@ export function setReportSettings(
       throw new V2Error("no_item", "その項目は見つかりませんでした。", 404);
     }
     const chosen = new Set(selectedIds as string[]);
+    // 相談先を変えたら、前の相談先に対する「次の一歩」のメモは持ち越さない
+    if (session.consultant !== consultant) delete session.steps.consult;
     session.consultant = consultant as ConsultantKey;
     if (purpose !== null) session.purpose = purpose;
     for (const item of session.items) item.selected = chosen.has(item.id);
