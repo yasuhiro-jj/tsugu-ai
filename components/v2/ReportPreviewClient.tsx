@@ -76,6 +76,7 @@ export default function ReportPreviewClient() {
         <List title="経営者の思い・希望（ご本人の発言）" items={report.statements} />
         <List title="相談したいと思われること（AIの整理案。事実とは限りません）" items={report.aiNotes} />
         {report.optionsNote && <List title="関心のある選択肢" items={[report.optionsNote]} />}
+        <List title="講座で整理したメモ（ご本人が書いたもの）" items={report.memo ?? []} />
         <List title="準備の状況（ご本人が整理したもの。資料での確認は、相談先と一緒に行います）" items={report.prep} />
         <List title="確認できていないこと" items={report.unconfirmed} />
         <List title="相談したい質問" items={report.questions} />

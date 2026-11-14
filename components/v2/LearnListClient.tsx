@@ -20,6 +20,13 @@ export default function LearnListClient() {
       </p>
       <ErrorBox message={error} />
 
+      <div className="card">
+        <p>どの講座から始めるか迷うときは、5つの質問に答えると、候補をお見せします。</p>
+        <Link className="button button--secondary" href="/v2/learn/start">
+          自分に合う学びを選ぶ
+        </Link>
+      </div>
+
       <ul className="v2-courses">
         {COURSES.map((c) => {
           const entry = session?.learning?.[c.id];
@@ -44,7 +51,7 @@ export default function LearnListClient() {
       </ul>
 
       <p className="ai-note">
-        講座のメモはご自分用です。相談資料には入りません。学んだ量や正解の数で、人を評価することはありません。
+        講座のメモはご自分用です。講座「相談前の情報整理」のメモだけは、ご自分で印をつけた場合に限り、相談資料に載せられます。学んだ量や正解の数で、人を評価することはありません。
       </p>
     </>
   );

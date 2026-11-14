@@ -53,7 +53,7 @@ export type PrepEntry = {
 };
 
 /** statement=本人の発言 / ai_note=AIの整理案 / unconfirmed=未確認 / option=関心のある選択肢 / prep=準備の状況 */
-export type ItemKind = "statement" | "ai_note" | "unconfirmed" | "option" | "prep";
+export type ItemKind = "statement" | "ai_note" | "unconfirmed" | "option" | "prep" | "note";
 
 export type Item = {
   id: string;
@@ -63,6 +63,8 @@ export type Item = {
   answerId?: string;
   /** 準備リストの項目のとき、その分野 */
   prepKey?: PrepKey;
+  /** 講座で書いたメモの項目のとき、どの講座のどの欄か（「講座の ID.欄の名前」） */
+  noteKey?: string;
   text: string;
   /** 本人が書き直したか */
   edited: boolean;
@@ -82,6 +84,8 @@ export type Report = {
   optionsNote: string | null;
   /** 準備の状況（本人が載せると選んだ分野だけ） */
   prep: string[];
+  /** 講座で書いたメモ（本人が載せると選んだものだけ） */
+  memo: string[];
   unconfirmed: string[];
   questions: string[];
   documents: string[];

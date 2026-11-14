@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { CHECK_VALUES, courseDef, gradeQuiz, MAX_NOTE, type CourseId } from "@/lib/v2/courses";
+import { CHECK_VALUES, courseDef, gradeQuiz, MAX_NOTE, SHAREABLE_NOTES, type CourseId } from "@/lib/v2/courses";
 import type { LearningEntry } from "@/lib/v2/types";
 import { ErrorBox, Loading } from "./Shared";
 import { useV2Session } from "./use-session";
@@ -105,7 +105,10 @@ export default function CourseClient({ courseId }: { courseId: CourseId }) {
       <section className="card">
         <h2 className="section-title">{course.workTitle}</h2>
         <p className="muted">
-          書けるところだけでかまいません。空欄があっても大丈夫です。ここに書いたことは、ご自分用のメモです。相談資料には入りません。
+          書けるところだけでかまいません。空欄があっても大丈夫です。
+          {SHAREABLE_NOTES.some((n) => n.courseId === courseId)
+            ? "ここに書いたメモは、面談のあと「資料に載せる項目」の画面に候補として並びます。ご自分で印をつけたものだけが相談資料に入ります（「渡す項目／渡さない項目」は候補になりません）。"
+            : "ここに書いたことは、ご自分用のメモです。相談資料には入りません。"}
         </p>
         {course.fields.map((f) => (
           <div key={f.key}>

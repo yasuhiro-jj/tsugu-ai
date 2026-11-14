@@ -28,7 +28,7 @@ import {
   THEME_KEYS,
   themeDef,
 } from "./content";
-import { CHECK_VALUES, courseDef, isCourseId, MAX_NOTE } from "./courses";
+import { CHECK_VALUES, courseDef, isCourseId, MAX_NOTE, SHAREABLE_NOTES } from "./courses";
 import { echo, safeQuestion } from "./echo";
 import { StoreConflictError, StoreFullError, type V2Store } from "./store";
 import {
@@ -164,6 +164,7 @@ function advance(deps: Deps, session: Session, prefix: string): Turn | null {
   session.currentTheme = null;
   session.phase = "review";
   session.items = buildReviewItems(session.themes, deps.newId);
+  syncNoteItems(deps, session);
   return null;
 }
 
@@ -356,6 +357,7 @@ export function saveLearning(deps: Deps, sid: string, courseId: unknown, raw: un
     if (existing) checkOwner(deps, existing);
     const session = existing ? fillPrep(existing) : create(deps, sid);
     session.learning[courseId] = entry;
+    syncNoteItems(deps, session);
     return save(deps, session);
   }).catch(busyIfFull);
 }
@@ -454,6 +456,42 @@ function rejectPrep(item: Item) {
   if (item.kind === "prep") {
     throw new V2Error("bad_input", "準備リストの項目は、準備リストの画面で直してください。");
   }
+  if (item.kind === "note") {
+    throw new V2Error("bad_input", "講座で書いたメモは、講座の画面で直してください。");
+  }
+}
+
+/**
+ * 講座で書いたメモのうち、相談資料に載せる候補にできるものを、項目の一覧に反映する。
+ * - 候補になるだけ。「載せる」は必ず未選択から始まる（本人が選んだものだけ資料に入る）
+ * - 文章が変わったら「載せる」を外し、ID も発行し直す。メモを消したら項目も消す
+ * - 何かが変わったときは、古い資料の下書きを破棄する
+ * 面談が終わる前は、項目の一覧がまだないので、何もしない
+ */
+function syncNoteItems(deps: Deps, session: Session) {
+  if (session.phase !== "review") return;
+  let changed = false;
+  for (const def of SHAREABLE_NOTES) {
+    const noteKey = `${def.courseId}.${def.key}`;
+    const written = session.learning?.[def.courseId]?.notes?.[def.key] ?? "";
+    const text = written === "" ? "" : `${def.label}：${written}`;
+    const item = session.items.find((i) => i.kind === "note" && i.noteKey === noteKey);
+    if (text === "") {
+      if (item) {
+        session.items = session.items.filter((i) => i !== item);
+        changed = true;
+      }
+    } else if (!item) {
+      session.items.push({ id: deps.newId(), kind: "note", theme: null, noteKey, text, edited: false, selected: false });
+      changed = true;
+    } else if (item.text !== text) {
+      item.text = text;
+      item.selected = false;
+      item.id = deps.newId();
+      changed = true;
+    }
+  }
+  if (changed) session.report = null;
 }
 
 /** 整理案を本人が書き直す。資料の下書きは古くなるので破棄する */
