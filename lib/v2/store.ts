@@ -35,6 +35,14 @@ export class StoreConflictError extends Error {
   }
 }
 
+/** 保存してある中身が壊れていて、面談として読めない */
+export class StoreCorruptError extends Error {
+  constructor() {
+    super("store_corrupt");
+    this.name = "StoreCorruptError";
+  }
+}
+
 /** 保存先がいっぱいで、新しい面談を受け付けられない */
 export class StoreFullError extends Error {
   constructor() {

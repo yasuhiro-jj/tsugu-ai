@@ -196,7 +196,7 @@ export default function NextStepsClient() {
             保存しました。
           </p>
         )}
-        <p className="muted">このメモは、どこにも送られません。印刷して、ご自分で使います。</p>
+        <p className="muted">このメモは、このサービスの中に保存されます。外部の会社や相談先には送りません。印刷して、ご自分で使います。</p>
       </div>
     </>
   );

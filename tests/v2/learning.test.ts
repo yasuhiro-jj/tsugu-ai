@@ -196,6 +196,27 @@ describe("講座03の相談メモは、本人が選んだものだけ相談資�
     expect(changed.items.find((i) => i.noteKey === "prepare.topic")!.selected).toBe(true);
   });
 
+  it("選んだメモで資料を作ったあとにメモを消すと、資料も破棄される", async () => {
+    const { deps, view } = await ready();
+    const topic = view.items.find((i) => i.noteKey === "prepare.topic")!;
+    await service.setReportSettings(deps, SID_A, "bank", [topic.id]);
+    expect((await service.generateReport(deps, SID_A)).report!.memo).toHaveLength(1);
+    const cleared = await service.saveLearning(deps, SID_A, "prepare", { notes: {} });
+    expect(cleared.report).toBeNull();
+    expect(cleared.items.some((i) => i.kind === "note")).toBe(false);
+    await expect(service.generateReport(deps, SID_A)).rejects.toMatchObject({ code: "nothing_selected" });
+  });
+
+  it("面談の前に書いたメモは、「ここで終えて確認へ進む」で終えても候補に並ぶ（未選択）", async () => {
+    const deps = createDeps();
+    await service.saveLearning(deps, SID_A, "prepare", { notes: { questions: SECRET } });
+    await service.start(deps, SID_A);
+    const done = await service.finishEarly(deps, SID_A);
+    const notes = done.items.filter((i) => i.kind === "note");
+    expect(notes.map((i) => i.noteKey)).toEqual(["prepare.questions"]);
+    expect(notes[0].selected).toBe(false);
+  });
+
   it("ほかの講座のメモは、候補にならない。メモの項目は、内容の確認の画面からは直せない・外せない", async () => {
     const { deps, view } = await ready();
     const other = await service.saveLearning(deps, SID_A, "values", { notes: { kept: SECRET } });
@@ -295,6 +316,11 @@ describe("学びの記録は本人用。相談資料・記録・ほかの人に�
     expect(env.audit.list().filter((e) => e.action === "saveLearning" && e.outcome === "ok")).toHaveLength(2);
     // 講座から始めた人の入れ物にも、持ち主が記録される
     expect((await env.deps.store.size())).toBe(2);
+    for (const token of [a, b]) {
+      const actor = (await env.auth.resolve(token))!;
+      const stored = (await env.deps.store.get(`${actor.tenantId}/${actor.userId}`))!;
+      expect(stored.owner).toEqual({ tenantId: actor.tenantId, userId: actor.userId });
+    }
   });
 
   it("別のセッションの記録は、内容も存在も見えない", async () => {

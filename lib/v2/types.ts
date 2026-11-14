@@ -106,7 +106,7 @@ export type StepChoice = {
   when: WhenKey | null;
 };
 
-/** 講座ごとの、本人の学びの記録。本人用のメモで、相談資料には入れない */
+/** 講座ごとの、本人の学びの記録。本人用（講座03の相談メモだけは、本人が選べば相談資料に載せられる） */
 export type LearningEntry = {
   /** 確認問題で選んだ答え（まだなら null） */
   quiz: "yes" | "no" | null;
@@ -122,6 +122,8 @@ export type Session = {
   id: string;
   /** 保存先が付ける版の番号（同時に変えられたことに気づくため）。画面へは返さない */
   rev?: number;
+  /** 保存先が付ける、作成ごとの印（消して作り直した面談を、古い内容で上書きさせないため）。画面へは返さない */
+  gen?: string;
   /** 持ち主（会社と本人）。権限確認で照らし合わせる。画面へは返さない */
   owner?: { tenantId: string; userId: string };
   createdAt: string;
@@ -135,7 +137,7 @@ export type Session = {
   reviewConfirmed: boolean;
   prep: Record<PrepKey, PrepEntry>;
   options: OptionKey[];
-  /** 講座の学びの記録（講座の ID → 記録）。本人用のメモで、相談資料には入れない */
+  /** 講座の学びの記録（講座の ID → 記録）。本人用。講座03の相談メモだけは、本人が選べば相談資料の候補になる */
   learning: Record<string, LearningEntry>;
   /** 「次の一歩」で本人が選んだこと。本人用のメモで、相談資料には入れない */
   steps: Partial<Record<StepKey, StepChoice>>;
@@ -146,7 +148,7 @@ export type Session = {
 };
 
 /** 画面へ返す形。置き場所の ID と持ち主の ID は返さない */
-export type SessionView = Omit<Session, "id" | "owner" | "rev">;
+export type SessionView = Omit<Session, "id" | "owner" | "rev" | "gen">;
 
 /** 資料生成に渡す入力。本人が選んだ項目だけが入る */
 export type ReportInput = {

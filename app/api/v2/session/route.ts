@@ -4,6 +4,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { handle, hasInterview, recordRefusal, view } from "@/lib/v2/access";
+import { isCourseId } from "@/lib/v2/courses";
 import {
   allowNewInterview,
   clearSessionId,
@@ -93,6 +94,11 @@ export async function POST(req: NextRequest) {
       if (input.action !== "start" && input.action !== "saveLearning") {
         recordRefusal(env, input.action, "no_session");
         return fail(409, "面談がまだ始まっていません。最初の画面から始めてください。");
+      }
+      // 講座の記録の保存は、講座の指定が正しいと分かってから先へ進む
+      // （正しくない送信で、回数の上限やクッキーを消費させない）
+      if (input.action === "saveLearning" && !isCourseId(input.courseId)) {
+        return fail(400, "講座の指定が正しくありません。");
       }
       // 短時間に大量に始められるのを遅らせる
       if (!allowNewInterview()) {

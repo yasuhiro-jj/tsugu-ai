@@ -167,7 +167,7 @@ export default function CourseClient({ courseId }: { courseId: CourseId }) {
             保存しました。
           </p>
         )}
-        <p className="muted">このメモは、どこにも送られません。試作のため、サーバーが止まると消えます。</p>
+        <p className="muted">このメモは、このサービスの中に保存されます。外部の会社や相談先には送りません。試作のため、サーバーが止まると消えます。</p>
       </div>
     </>
   );

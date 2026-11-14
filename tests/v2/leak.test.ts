@@ -333,17 +333,30 @@ describe("既存版（ハッカソン版）へつながる経路がない", () =
       expect(source, file).not.toMatch(/https?:\/\//);
       const envs = [...source.matchAll(/process\.env\.([A-Z0-9_]+)/g)].map((m) => m[1]);
       expect(envs.every((e) => e === "NODE_ENV" || e === "VERCEL"), file).toBe(true);
+      // 名前を変数で指定する読み方や、まとめて取り出す読み方もしていない
+      expect(source, file).not.toMatch(/process\.env\s*\[|=\s*process\.env\b(?!\.)|\}\s*=\s*process\.env/);
     }
   });
 
   it("Turso 用の保存先は、まだどこからも使っていない（手元の試作はメモリ保存のまま）", () => {
-    const users = files.filter((f) => !isLibsqlStore(f) && /store-libsql["']/.test(readFileSync(f, "utf8")));
+    // 2.0 のフォルダだけでなく、リポジトリ全体（テストと依存パッケージを除く）を調べる
+    const skip = new Set(["node_modules", ".next", ".git", "tests", "video", "screenshots"]);
+    const walkAll = (dir: string): string[] =>
+      readdirSync(dir).flatMap((name) => {
+        if (skip.has(name)) return [];
+        const path = join(dir, name);
+        return statSync(path).isDirectory() ? walkAll(path) : [path];
+      });
+    const all = walkAll(ROOT).filter((f) => /\.(ts|tsx|js|mjs|cjs)$/.test(f));
+    expect(all.length).toBeGreaterThan(files.length);
+    // 拡張子つきの書き方（store-libsql.ts など）も拾う
+    const users = all.filter((f) => !isLibsqlStore(f) && /store-libsql(\.[a-z]+)?["'`]/.test(readFileSync(f, "utf8")));
     expect(users).toEqual([]);
     const runtime = readFileSync(join(ROOT, "lib/v2/runtime.ts"), "utf8");
     expect(runtime).toContain("createMemoryStore");
     // ハッカソン版のデータベースの入口（lib/db.ts）も、鍵の名前も、接続を作る処理も入っていない
     const store = readFileSync(join(ROOT, "lib/v2/store-libsql.ts"), "utf8");
-    expect(store).not.toMatch(/process\.env|createClient|@\/lib\/db/);
+    expect(store).not.toMatch(/process\s*\.\s*env|process\[|createClient|@\/lib\/db|\.\.\/db/);
   });
 
   it("外部への通信（fetch）は、画面から自分の API を呼ぶ1か所だけ", () => {

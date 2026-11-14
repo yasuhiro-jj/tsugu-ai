@@ -209,6 +209,44 @@ describe("新しく始める回数の上限", () => {
   });
 });
 
+describe("講座の記録の保存でも、入口の守りは同じ", () => {
+  const learn = (courseId: unknown) => post({ action: "saveLearning", courseId, learning: { quiz: "no" } });
+
+  it("正しくない講座の指定は、クッキーも回数も使わずに断る", async () => {
+    const { POST } = await load();
+    for (let i = 0; i < 40; i++) {
+      jar.clear();
+      expect((await POST(learn("nothing"))).status).toBe(400);
+    }
+    expect(setCalls).toHaveLength(0);
+    // 回数の上限は消費されていないので、ふつうに始められる
+    expect((await POST(post({ action: "start" }))).status).toBe(200);
+  });
+
+  it("1分に30回を超えて新しく作ろうとすると 429 で断る", async () => {
+    const { POST } = await load();
+    let limited = 0;
+    for (let i = 0; i < 35; i++) {
+      jar.clear();
+      if ((await POST(learn("values"))).status === 429) limited++;
+    }
+    expect(limited).toBe(5);
+  });
+
+  it("保存先がいっぱいのときは 503 で断り、すでにある記録は残る", async () => {
+    const { createMemoryStore } = await import("@/lib/v2/store");
+    (globalThis as { __tsuguV2Store?: unknown }).__tsuguV2Store = createMemoryStore({ maxSessions: 1 });
+    const { POST, GET } = await load();
+    expect((await POST(learn("values"))).status).toBe(200);
+    const mine = jar.get(COOKIE)!;
+    jar.clear();
+    expect((await POST(learn("options"))).status).toBe(503);
+    jar.clear();
+    jar.set(COOKIE, mine);
+    expect((await (await GET()).json()).session.learning.values.quiz).toBe("no");
+  });
+});
+
 describe("エラーとログ", () => {
   it("知らない操作や正しくない入力は 400 で、決まった文だけを返す", async () => {
     const { POST } = await load();

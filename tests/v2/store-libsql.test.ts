@@ -142,20 +142,58 @@ describe("会社ごとに、データベースが分かれている", () => {
     expect(JSON.stringify([after[0]])).toBe(before);
   });
 
-  it("ID に記号や引用符が入っていても、取り違えも、SQL としての実行も起きない", async () => {
-    const { env, directory, rows } = setup();
-    // SQL の一部に見える文字を含む、架空の ID
-    const odd = `x'; DELETE FROM v2_interviews; --`;
-    directory.addUser(odd, "t/1");
-    directory.addUser("u", `t/1' OR '1'='1`);
-    const first = directory.login(odd);
-    const second = directory.login("u");
-    await handle(env, first, { action: "start" });
-    await handle(env, first, { action: "answer", text: SECRET });
-    await handle(env, second, { action: "start" });
-    expect((await rows("t/1")).map((r) => r.user_id)).toEqual([odd]);
-    expect(JSON.stringify(await view(env, second))).not.toContain(SECRET);
-    expect(JSON.stringify(await view(env, first))).toContain(SECRET);
+  it("会社や本人の ID に、記号・区切りの文字・SQL の一部に見える文字があると、保存先が受け付けない", async () => {
+    const { env, directory, dbs, opened } = setup();
+    const a1 = directory.login("a1");
+    await handle(env, a1, { action: "start" });
+    await handle(env, a1, { action: "answer", text: SECRET });
+    opened.length = 0;
+    const cases: [string, string][] = [
+      [`x'; DELETE FROM v2_interviews; --`, "tenant-a"],
+      ["u", `tenant-a' OR '1'='1`],
+      ["u", "tenant-a/../tenant-b"],
+      ["u", "tenant-a.example.com"],
+      ["u u", "tenant-a"],
+      ["u", "テナント"],
+      ["u", "t".repeat(129)],
+    ];
+    for (const [userId, tenantId] of cases) {
+      directory.addUser(userId, tenantId);
+      await expect(handle(env, directory.login(userId), { action: "start" }), `${userId}|${tenantId}`).rejects.toThrow();
+    }
+    // どのデータベースも開かれておらず、A社の内容はそのまま
+    expect(opened).toEqual([]);
+    expect([...dbs.keys()]).toEqual(["tenant-a"]);
+    expect(JSON.stringify(await view(env, a1))).toContain(SECRET);
+  });
+
+  it("1つのデータベースを複数の会社で使う構成になっても、会社どうしの内容は混ざらない", async () => {
+    // どの会社にも同じデータベースを返す、という（望ましくない）つなぎ方を想定する
+    const shared = createClient({ url: ":memory:" });
+    let n = 0;
+    const directory = createDirectoryAuth({ newToken: () => `token-${++n}` });
+    directory.addUser("same", "tenant-a");
+    directory.addUser("other", "tenant-b");
+    const env: Env = {
+      deps: createDeps({ store: createLibsqlStore(() => shared) }),
+      auth: directory.provider,
+      audit: createAuditLog(),
+    };
+    const a = directory.login("same");
+    const b = directory.login("other");
+    await handle(env, a, { action: "start" });
+    await handle(env, a, { action: "answer", text: SECRET });
+    await handle(env, b, { action: "start" });
+    expect(JSON.stringify(await view(env, b))).not.toContain(SECRET);
+    await expect(view(env, b, "tenant-a/same")).rejects.toMatchObject({ status: 409 });
+    await handle(env, b, { action: "reset" });
+    // B社の人が消しても、A社の行は残る。同じ接続を二重に数えない
+    expect(JSON.stringify(await view(env, a))).toContain(SECRET);
+    expect(await env.deps.store.size()).toBe(1);
+    // 別の会社に、同じ ID の人がいても、行は別
+    directory.addUser("same2", "tenant-b");
+    const rows = (await shared.execute("SELECT tenant_id, user_id FROM v2_interviews")).rows;
+    expect(rows.map((r) => `${r.tenant_id}/${r.user_id}`)).toEqual(["tenant-a/same"]);
   });
 });
 
@@ -228,12 +266,66 @@ describe("同時に変えられたとき・おかしな保存を断る", () => {
     expect(await store.size()).toBe(0);
   });
 
-  it("形の合わない置き場所の名前は、読むのも消すのも断る", async () => {
-    const { env } = setup();
-    for (const bad of ["", "tenant-a", "a/b/c", "/a1", "tenant-a/", "tenant a/a1", "%E0%A4%A/a1"]) {
+  it("形の合わない置き場所の名前は、読むのも書くのも消すのも断る", async () => {
+    const { env, opened } = setup();
+    const bads = ["", "tenant-a", "a/b/c", "/a1", "tenant-a/", "tenant a/a1", "%E0%A4%A/a1", "tenant%2da/a1", "tenant%2Da/a1", "tenant-a/a1%20"];
+    for (const bad of bads) {
       await expect(Promise.resolve().then(() => env.deps.store.get(bad)), bad).rejects.toThrow();
       await expect(Promise.resolve().then(() => env.deps.store.delete(bad)), bad).rejects.toThrow();
+      await expect(
+        Promise.resolve().then(() =>
+          env.deps.store.put({ ...structuredClone(EMPTY), id: bad, owner: { tenantId: "tenant-a", userId: "a1" } }),
+        ),
+        bad,
+      ).rejects.toThrow();
     }
+    expect(opened).toEqual([]);
+  });
+
+  it("消して作り直した面談に、消す前の古い内容を上書きさせない", async () => {
+    const { env, directory } = setup();
+    const a1 = directory.login("a1");
+    await handle(env, a1, { action: "start" });
+    const key = "tenant-a/a1";
+    // 回答の保存を待っている途中、という想定で、消す前の版を手元に持つ
+    const stale = (await env.deps.store.get(key))!;
+    stale.log.push({ who: "me", theme: "legacy", text: SECRET });
+    // その間に、別の画面で「すべて消す」→ 始め直す（版の番号は、また1から始まる）
+    await handle(env, a1, { action: "reset" });
+    await handle(env, a1, { action: "start" });
+    expect((await env.deps.store.get(key))!.rev).toBe(stale.rev);
+    await expect(Promise.resolve().then(() => env.deps.store.put(stale))).rejects.toBeInstanceOf(StoreConflictError);
+    expect(JSON.stringify(await env.deps.store.get(key))).not.toContain(SECRET);
+  });
+
+  it("消したあとに、古い内容で保存しようとしても、戻らない", async () => {
+    const { env, directory, rows } = setup();
+    const a1 = directory.login("a1");
+    await handle(env, a1, { action: "start" });
+    const stale = (await env.deps.store.get("tenant-a/a1"))!;
+    stale.log.push({ who: "me", theme: "legacy", text: SECRET });
+    await handle(env, a1, { action: "reset" });
+    await expect(Promise.resolve().then(() => env.deps.store.put(stale))).rejects.toBeInstanceOf(StoreConflictError);
+    expect(await rows("tenant-a")).toHaveLength(0);
+  });
+
+  it("保存した中身が壊れていたら、決まった返事にして、本人が「すべて消す」で消せる", async () => {
+    const { env, directory, dbs, rows } = setup();
+    const a1 = directory.login("a1");
+    await handle(env, a1, { action: "start" });
+    for (const broken of ["{not json", "null", "[]", '{"phase":"review"}', '"text"']) {
+      await dbs.get("tenant-a")!.execute({ sql: "UPDATE v2_interviews SET data = ?", args: [broken] });
+      await expect(view(env, a1), broken).rejects.toMatchObject({ code: "corrupt", status: 500 });
+      await expect(handle(env, a1, { action: "skip" }), broken).rejects.toMatchObject({ code: "corrupt" });
+      // 返事に、壊れた中身そのものは出さない
+      await view(env, a1).catch((e: Error) => expect(e.message).not.toContain(broken));
+    }
+    // 壊れていても「ある」と分かり、消せる。消したあとは始め直せる
+    const { hasInterview } = await import("@/lib/v2/access");
+    expect(await hasInterview(env, a1)).toBe(true);
+    expect(await handle(env, a1, { action: "reset" })).toBeNull();
+    expect(await rows("tenant-a")).toHaveLength(0);
+    expect((await handle(env, a1, { action: "start" }))!.log).toHaveLength(1);
   });
 });
 
