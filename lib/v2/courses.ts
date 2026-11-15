@@ -160,6 +160,20 @@ export const CHECK_VALUES = [
 
 export const MAX_NOTE = 300;
 
+/**
+ * 相談資料に載せる候補にできるメモの欄。
+ * 講座03「相談前の情報整理」の相談メモのうち、相談先に伝える内容になり得るものだけ。
+ * 「渡す項目／渡さない項目」は本人の心づもりなので、候補にしない。
+ * 候補になるだけで、載せるかどうかは本人が「資料に載せる項目」の画面で選ぶ（初期は未選択）。
+ */
+export const SHAREABLE_NOTES: readonly { courseId: CourseId; key: string; label: string }[] = [
+  { courseId: "prepare", key: "topic", label: "相談したいこと" },
+  { courseId: "prepare", key: "wish", label: "本人の希望" },
+  { courseId: "prepare", key: "confirmed", label: "資料で確認したこと・確認日" },
+  { courseId: "prepare", key: "unconfirmed", label: "未確認のこと" },
+  { courseId: "prepare", key: "questions", label: "当日聞きたい質問" },
+];
+
 /** 確認問題の答え合わせ（決まった処理） */
 export function gradeQuiz(id: CourseId, answer: "yes" | "no"): boolean {
   return courseDef(id).quiz.correct === answer;

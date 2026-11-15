@@ -36,6 +36,7 @@ export const mockReportGenerator: ReportGenerator = async (input) => {
     aiNotes: byKind("ai_note"),
     optionsNote: option ? option.text : null,
     prep: byKind("prep"),
+    memo: byKind("note"),
     unconfirmed: byKind("unconfirmed"),
     questions,
     documents: [...REPORT_DOCUMENTS],

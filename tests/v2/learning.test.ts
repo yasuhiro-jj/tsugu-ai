@@ -130,6 +130,152 @@ describe("学びの記録を保存する", () => {
   });
 });
 
+describe("講座03の相談メモは、本人が選んだものだけ相談資料に載る", () => {
+  async function ready() {
+    const deps = createDeps();
+    await completeInterview(deps, SID_A);
+    await service.confirmReview(deps, SID_A);
+    const view = await service.saveLearning(deps, SID_A, "prepare", {
+      notes: { topic: "引き継ぎの進め方", questions: `${SECRET}について聞く`, share: "店の概要だけ渡す" },
+    });
+    return { deps, view };
+  }
+
+  it("面談のあとに書いたメモは、載せる候補に並ぶ。初期は未選択", async () => {
+    const { view } = await ready();
+    const notes = view.items.filter((i) => i.kind === "note");
+    expect(notes.map((i) => i.text).sort()).toEqual([`当日聞きたい質問：${SECRET}について聞く`, "相談したいこと：引き継ぎの進め方"].sort());
+    expect(notes.every((i) => i.selected === false && i.theme === null)).toBe(true);
+  });
+
+  it("面談の前に書いたメモも、面談が終わると候補に並ぶ", async () => {
+    const deps = createDeps();
+    const before = await service.saveLearning(deps, SID_A, "prepare", { notes: { topic: "先に書いたメモ" } });
+    expect(before.items).toEqual([]);
+    const done = await completeInterview(deps, SID_A);
+    expect(done.items.filter((i) => i.kind === "note").map((i) => i.text)).toEqual(["相談したいこと：先に書いたメモ"]);
+  });
+
+  it("選んだメモだけが資料に入り、選ばなかったメモは資料生成の入力にも資料にも出ない", async () => {
+    const { deps, view } = await ready();
+    const topic = view.items.find((i) => i.noteKey === "prepare.topic")!;
+    await service.setReportSettings(deps, SID_A, "bank", [topic.id]);
+    const done = await service.generateReport(deps, SID_A);
+    expect(done.report!.memo).toEqual(["相談したいこと：引き継ぎの進め方"]);
+    expect(JSON.stringify(done.report)).not.toContain(SECRET);
+    expect(JSON.stringify(deps.generatorInputs)).not.toContain(SECRET);
+    expect(JSON.stringify(deps.generatorInputs)).not.toContain("店の概要だけ渡す");
+    // メモを選んでも、面談のテーマの質問は足されない
+    expect(done.report!.questions).toEqual(["事業の引き継ぎについて、ほかにどのような選択肢と相談先がありますか？"]);
+  });
+
+  it("メモを書き直すと「載せる」が外れ、ID も変わり、古い資料は破棄される", async () => {
+    const { deps, view } = await ready();
+    const topic = view.items.find((i) => i.noteKey === "prepare.topic")!;
+    await service.setReportSettings(deps, SID_A, "bank", [topic.id]);
+    await service.generateReport(deps, SID_A);
+    const changed = await service.saveLearning(deps, SID_A, "prepare", { notes: { topic: `${SECRET}に書き直した` } });
+    const after = changed.items.find((i) => i.noteKey === "prepare.topic")!;
+    expect(after.selected).toBe(false);
+    expect(after.id).not.toBe(topic.id);
+    expect(changed.report).toBeNull();
+    // 古い画面が持つ ID では選べない
+    await expect(service.setReportSettings(deps, SID_A, "bank", [topic.id])).rejects.toMatchObject({ status: 404 });
+    await expect(service.generateReport(deps, SID_A)).rejects.toMatchObject({ code: "nothing_selected" });
+    expect(JSON.stringify(deps.generatorInputs)).not.toContain(SECRET);
+  });
+
+  it("メモを消すと、候補からも消える。変えていないメモの選択はそのまま", async () => {
+    const { deps, view } = await ready();
+    const topic = view.items.find((i) => i.noteKey === "prepare.topic")!;
+    const questions = view.items.find((i) => i.noteKey === "prepare.questions")!;
+    await service.setReportSettings(deps, SID_A, "bank", [topic.id, questions.id]);
+    const changed = await service.saveLearning(deps, SID_A, "prepare", { notes: { topic: "引き継ぎの進め方" } });
+    expect(changed.items.some((i) => i.noteKey === "prepare.questions")).toBe(false);
+    expect(JSON.stringify(changed.items)).not.toContain(SECRET);
+    expect(changed.items.find((i) => i.noteKey === "prepare.topic")!.selected).toBe(true);
+  });
+
+  it("選んだメモで資料を作ったあとにメモを消すと、資料も破棄される", async () => {
+    const { deps, view } = await ready();
+    const topic = view.items.find((i) => i.noteKey === "prepare.topic")!;
+    await service.setReportSettings(deps, SID_A, "bank", [topic.id]);
+    expect((await service.generateReport(deps, SID_A)).report!.memo).toHaveLength(1);
+    const cleared = await service.saveLearning(deps, SID_A, "prepare", { notes: {} });
+    expect(cleared.report).toBeNull();
+    expect(cleared.items.some((i) => i.kind === "note")).toBe(false);
+    await expect(service.generateReport(deps, SID_A)).rejects.toMatchObject({ code: "nothing_selected" });
+  });
+
+  it("面談の前に書いたメモは、「ここで終えて確認へ進む」で終えても候補に並ぶ（未選択）", async () => {
+    const deps = createDeps();
+    await service.saveLearning(deps, SID_A, "prepare", { notes: { questions: SECRET } });
+    await service.start(deps, SID_A);
+    const done = await service.finishEarly(deps, SID_A);
+    const notes = done.items.filter((i) => i.kind === "note");
+    expect(notes.map((i) => i.noteKey)).toEqual(["prepare.questions"]);
+    expect(notes[0].selected).toBe(false);
+  });
+
+  it("ほかの講座のメモは、候補にならない。メモの項目は、内容の確認の画面からは直せない・外せない", async () => {
+    const { deps, view } = await ready();
+    const other = await service.saveLearning(deps, SID_A, "values", { notes: { kept: SECRET } });
+    expect(other.items.filter((i) => i.kind === "note")).toHaveLength(2);
+    expect(other.items.some((i) => i.text.includes("長年大切にしてきたこと"))).toBe(false);
+    const note = view.items.find((i) => i.kind === "note")!;
+    await expect(service.editItem(deps, SID_A, note.id, "書き換え")).rejects.toBeInstanceOf(V2Error);
+    await expect(service.removeItem(deps, SID_A, note.id)).rejects.toBeInstanceOf(V2Error);
+  });
+});
+
+describe("自分に合う学びを選ぶ（入口の質問）", () => {
+  it("質問は5つで、どれも答えなくてよい。何も答えなければ最初の講座から", async () => {
+    const { GUIDE_QUESTIONS, suggestLearning } = await import("@/lib/v2/learning-guide");
+    expect(GUIDE_QUESTIONS.map((q) => q.key)).toEqual(["role", "concern", "successor", "start", "urgent"]);
+    expect(suggestLearning({})).toEqual({ notices: [], interviewFirst: false, courses: ["values", "ai-safety"] });
+  });
+
+  it("急ぎの期限や相談があるときは、学びを待たずに専門家へ相談するよう伝える", async () => {
+    const { suggestLearning } = await import("@/lib/v2/learning-guide");
+    const s = suggestLearning({ urgent: "yes" });
+    expect(s.notices[0]).toContain("待たずに");
+    expect(s.notices[0]).toContain("専門家");
+    expect(suggestLearning({ urgent: "no" }).notices).toEqual([]);
+    expect(suggestLearning({ urgent: "unsure" }).notices).toEqual([]);
+  });
+
+  it("答えに合わせて候補が変わる。面談から始めたい人には面談を勧める", async () => {
+    const { suggestLearning } = await import("@/lib/v2/learning-guide");
+    expect(suggestLearning({ successor: "none", concern: "future" }).courses).toEqual(["options", "values", "ai-safety"]);
+    expect(suggestLearning({ start: "report" })).toMatchObject({ interviewFirst: true, courses: ["prepare", "ai-safety"] });
+    expect(suggestLearning({ start: "talk" }).interviewFirst).toBe(true);
+    expect(suggestLearning({ start: "read" }).interviewFirst).toBe(false);
+    expect(suggestLearning({ start: "choose" }).courses).toEqual(["values", "options", "prepare", "ai-safety"]);
+    expect(suggestLearning({ concern: "handover" }).courses).toEqual(["options", "prepare", "ai-safety"]);
+  });
+
+  it("まだ用意のない講座は、あるように見せない", async () => {
+    const { suggestLearning } = await import("@/lib/v2/learning-guide");
+    expect(suggestLearning({ concern: "money" }).notices.join("")).toContain("専門家の確認が済んでから");
+    expect(suggestLearning({ role: "successor" }).notices.join("")).toContain("まだ用意できていません");
+    expect(suggestLearning({ role: "owner" }).notices).toEqual([]);
+  });
+
+  it("人を評価・格付けしない。どの答えでも、点数や判定は返さない", async () => {
+    const { GUIDE_QUESTIONS, suggestLearning } = await import("@/lib/v2/learning-guide");
+    const text = JSON.stringify(GUIDE_QUESTIONS);
+    expect(text).not.toMatch(/レベル|点数|診断結果|不合格|初心者/);
+    for (const role of ["owner", "candidate", "successor", "other"]) {
+      for (const start of ["read", "talk", "report", "choose"]) {
+        const s = suggestLearning({ role, start, concern: "unsure", successor: "no_answer", urgent: "unsure" });
+        expect(Object.keys(s).sort()).toEqual(["courses", "interviewFirst", "notices"]);
+        expect(s.courses.length).toBeGreaterThan(0);
+        expect(JSON.stringify(s)).not.toMatch(/すべき|べきです|向いていません/);
+      }
+    }
+  });
+});
+
 describe("学びの記録は本人用。相談資料・記録・ほかの人に出ない", () => {
   it("資料生成の入力にも、資料にも、ログにも出ない", async () => {
     const logs: unknown[][] = [];
@@ -150,8 +296,12 @@ describe("学びの記録は本人用。相談資料・記録・ほかの人に�
     expect(JSON.stringify(view.report)).not.toContain(SECRET);
     expect(JSON.stringify(deps.generatorInputs)).not.toContain(SECRET);
     expect(JSON.stringify(logs)).not.toContain(SECRET);
-    // 整理した項目（載せる候補）にも混ざらない
-    expect(JSON.stringify(view.items)).not.toContain(SECRET);
+    // 候補には並ぶが、「載せる」はすべて未選択（本人が選ぶまで資料に入らない）
+    const notes = view.items.filter((i) => i.kind === "note");
+    expect(notes.map((i) => i.noteKey).sort()).toEqual(["prepare.questions", "prepare.topic"]);
+    expect(notes.every((i) => i.selected === false)).toBe(true);
+    // 「渡す項目／渡さない項目」は、候補にもならない
+    expect(view.items.some((i) => i.noteKey === "prepare.share")).toBe(false);
   });
 
   it("別の人からは見えない。操作の記録にも本文は残らない", async () => {
@@ -166,6 +316,11 @@ describe("学びの記録は本人用。相談資料・記録・ほかの人に�
     expect(env.audit.list().filter((e) => e.action === "saveLearning" && e.outcome === "ok")).toHaveLength(2);
     // 講座から始めた人の入れ物にも、持ち主が記録される
     expect((await env.deps.store.size())).toBe(2);
+    for (const token of [a, b]) {
+      const actor = (await env.auth.resolve(token))!;
+      const stored = (await env.deps.store.get(`${actor.tenantId}/${actor.userId}`))!;
+      expect(stored.owner).toEqual({ tenantId: actor.tenantId, userId: actor.userId });
+    }
   });
 
   it("別のセッションの記録は、内容も存在も見えない", async () => {

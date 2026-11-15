@@ -12,6 +12,7 @@ import type { Actor, AuthProvider } from "./auth";
 import type { AuditAction, AuditLog, AuditOutcome } from "./audit";
 import { dispatch, isAction } from "./dispatch";
 import { getView, type Deps } from "./service";
+import { StoreCorruptError } from "./store";
 import { V2Error, type SessionView } from "./types";
 
 export type Env = { deps: Deps; auth: AuthProvider; audit: AuditLog };
@@ -69,7 +70,14 @@ function record(env: Env, at: string, actor: Actor | null, action: AuditAction, 
 /** 手元の試作用：その合言葉で始めた面談が、保存先にあるか */
 export async function hasInterview(env: Env, token: string | null): Promise<boolean> {
   const actor = await identify(env, token);
-  return actor !== null && (await env.deps.store.get(interviewKey(actor))) !== null;
+  if (actor === null) return false;
+  try {
+    return (await env.deps.store.get(interviewKey(actor))) !== null;
+  } catch (e) {
+    // 中身が壊れていて読めないときも、「ある」として扱う（本人が「すべて消す」で消せるように）
+    if (e instanceof StoreCorruptError) return true;
+    throw e;
+  }
 }
 
 /** 入口で断った操作（ほかのサイトからの操作、回数の上限など）を記録する。本文は受け取らない */

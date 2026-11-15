@@ -7,7 +7,7 @@ import type { ConsultantKey, ItemKind } from "@/lib/v2/types";
 import { ErrorBox, Guide, KIND_LABELS, Loading, Steps } from "./Shared";
 import { useV2Session } from "./use-session";
 
-const KINDS: ItemKind[] = ["statement", "ai_note", "option", "prep", "unconfirmed"];
+const KINDS: ItemKind[] = ["statement", "ai_note", "note", "option", "prep", "unconfirmed"];
 
 export default function ReportSettingsClient() {
   const router = useRouter();

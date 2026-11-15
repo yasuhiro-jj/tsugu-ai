@@ -28,9 +28,9 @@ import {
   THEME_KEYS,
   themeDef,
 } from "./content";
-import { CHECK_VALUES, courseDef, isCourseId, MAX_NOTE } from "./courses";
+import { CHECK_VALUES, courseDef, isCourseId, MAX_NOTE, SHAREABLE_NOTES } from "./courses";
 import { echo, safeQuestion } from "./echo";
-import { StoreConflictError, StoreFullError, type V2Store } from "./store";
+import { StoreConflictError, StoreCorruptError, StoreFullError, type V2Store } from "./store";
 import {
   V2Error,
   type ConsultantKey,
@@ -84,7 +84,7 @@ async function withLock<T>(sid: string, fn: () => Promise<T>): Promise<T> {
 }
 
 function toView(session: Session): SessionView {
-  const { id: _id, owner: _owner, rev: _rev, ...view } = session;
+  const { id: _id, owner: _owner, rev: _rev, gen: _gen, ...view } = session;
   return view;
 }
 
@@ -126,8 +126,24 @@ function checkOwner(deps: Deps, session: Session) {
   }
 }
 
+/** 保存先から読む。中身が壊れていたら、決まった返事にする（本文は出さない） */
+async function read(deps: Deps, sid: string): Promise<Session | null> {
+  try {
+    return await deps.store.get(sid);
+  } catch (e) {
+    if (e instanceof StoreCorruptError) {
+      throw new V2Error(
+        "corrupt",
+        "保存した内容を読めませんでした。お手数ですが、「すべて消す」で消してから、始め直してください。",
+        500,
+      );
+    }
+    throw e;
+  }
+}
+
 async function load(deps: Deps, sid: string): Promise<Session> {
-  const session = await deps.store.get(sid);
+  const session = await read(deps, sid);
   if (!session) throw new V2Error("no_session", NO_SESSION, 409);
   checkOwner(deps, session);
   return fillPrep(session);
@@ -164,6 +180,7 @@ function advance(deps: Deps, session: Session, prefix: string): Turn | null {
   session.currentTheme = null;
   session.phase = "review";
   session.items = buildReviewItems(session.themes, deps.newId);
+  syncNoteItems(deps, session);
   return null;
 }
 
@@ -251,7 +268,7 @@ export function buildReportInput(session: Session): ReportInput {
 }
 
 export async function getView(deps: Deps, sid: string): Promise<SessionView | null> {
-  const session = await deps.store.get(sid);
+  const session = await read(deps, sid);
   if (!session) return null;
   checkOwner(deps, session);
   return toView(fillPrep(session));
@@ -260,7 +277,7 @@ export async function getView(deps: Deps, sid: string): Promise<SessionView | nu
 /** 面談を始める。すでに始めていれば続きから（中断しても同じ場所に戻れる） */
 export function start(deps: Deps, sid: string, owner?: Session["owner"]): Promise<SessionView> {
   return withLock(sid, async () => {
-    const existing = await deps.store.get(sid);
+    const existing = await read(deps, sid);
     if (existing) {
       checkOwner(deps, existing);
       return toView(fillPrep(existing));
@@ -310,7 +327,7 @@ function create(deps: Deps, sid: string, owner?: Session["owner"]): Session {
 /**
  * 講座の学びの記録（確認問題の答え、自分のメモ、確認リスト）を保存する。
  * 面談を始める前でも保存できる（講座から始める人のために、入れ物がなければ作る）。
- * 本人用のメモで、相談資料には入れない。資料の下書きにも影響しない。
+ * 本人用のメモ。講座03の相談メモだけは、本人が選べば相談資料の候補になる（syncNoteItems）。
  * 1つでも正しくない指定があれば、何も変えない
  */
 export function saveLearning(deps: Deps, sid: string, courseId: unknown, raw: unknown): Promise<SessionView> {
@@ -352,10 +369,11 @@ export function saveLearning(deps: Deps, sid: string, courseId: unknown, raw: un
       entry.checks[key] = value as "yes" | "no" | "unknown";
     }
 
-    const existing = await deps.store.get(sid);
+    const existing = await read(deps, sid);
     if (existing) checkOwner(deps, existing);
     const session = existing ? fillPrep(existing) : create(deps, sid);
     session.learning[courseId] = entry;
+    syncNoteItems(deps, session);
     return save(deps, session);
   }).catch(busyIfFull);
 }
@@ -454,6 +472,42 @@ function rejectPrep(item: Item) {
   if (item.kind === "prep") {
     throw new V2Error("bad_input", "準備リストの項目は、準備リストの画面で直してください。");
   }
+  if (item.kind === "note") {
+    throw new V2Error("bad_input", "講座で書いたメモは、講座の画面で直してください。");
+  }
+}
+
+/**
+ * 講座で書いたメモのうち、相談資料に載せる候補にできるものを、項目の一覧に反映する。
+ * - 候補になるだけ。「載せる」は必ず未選択から始まる（本人が選んだものだけ資料に入る）
+ * - 文章が変わったら「載せる」を外し、ID も発行し直す。メモを消したら項目も消す
+ * - 何かが変わったときは、古い資料の下書きを破棄する
+ * 面談が終わる前は、項目の一覧がまだないので、何もしない
+ */
+function syncNoteItems(deps: Deps, session: Session) {
+  if (session.phase !== "review") return;
+  let changed = false;
+  for (const def of SHAREABLE_NOTES) {
+    const noteKey = `${def.courseId}.${def.key}`;
+    const written = session.learning?.[def.courseId]?.notes?.[def.key] ?? "";
+    const text = written === "" ? "" : `${def.label}：${written}`;
+    const item = session.items.find((i) => i.kind === "note" && i.noteKey === noteKey);
+    if (text === "") {
+      if (item) {
+        session.items = session.items.filter((i) => i !== item);
+        changed = true;
+      }
+    } else if (!item) {
+      session.items.push({ id: deps.newId(), kind: "note", theme: null, noteKey, text, edited: false, selected: false });
+      changed = true;
+    } else if (item.text !== text) {
+      item.text = text;
+      item.selected = false;
+      item.id = deps.newId();
+      changed = true;
+    }
+  }
+  if (changed) session.report = null;
 }
 
 /** 整理案を本人が書き直す。資料の下書きは古くなるので破棄する */

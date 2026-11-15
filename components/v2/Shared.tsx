@@ -10,6 +10,7 @@ export const KIND_LABELS: Record<ItemKind, string> = {
   unconfirmed: "未確認",
   option: "関心のある選択肢",
   prep: "準備の状況",
+  note: "講座で書いたメモ",
 };
 
 export const KIND_HELP: Record<ItemKind, string> = {
@@ -19,6 +20,7 @@ export const KIND_HELP: Record<ItemKind, string> = {
   unconfirmed: "まだ確かめていないことです。「問題なし」という意味ではありません。",
   option: "知りたい選択肢です。決めたわけではありません。",
   prep: "準備リストでご本人が整理した状況です。",
+  note: "講座「相談前の情報整理」で、ご本人が書いたメモです。",
 };
 
 const STEPS = [
