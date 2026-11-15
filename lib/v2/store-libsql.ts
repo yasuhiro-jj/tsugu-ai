@@ -1,8 +1,9 @@
 // 面談の保存先：Turso（libSQL）用。会社ごとに、データベースそのものを分ける。
 //
-// いまの状態：部品として用意し、手元の中だけで動くデータベースで検証しただけ。
-// **まだ、どこからも使っていない。** 手元の試作はメモリ保存のまま（lib/v2/runtime.ts）。
-// 本物の Turso につなぐには、2.0 専用のデータベースと鍵をオーナーが用意する必要がある。
+// いまの状態：検証用の動かし方（lib/v2/runtime.ts）のときだけ使う。手元の試作はメモリ保存のまま。
+// 検証は、テストの中だけで動くデータベースで行った。**本物の Turso では、まだ一度も動かしていない。**
+// 検証用は、どの会社も1つのデータベースを使う（行は会社と本人の ID で必ず絞る）。
+// 会社ごとにデータベースを分けるのは、実データを扱う前に行う。
 // ハッカソン版のデータベースと鍵は、絶対に使わない。
 //
 // 守っていること
@@ -18,10 +19,10 @@
 // - 会社の ID を、接続先の URL やデータベースの名前に、文字としてそのまま埋め込まない。
 //   登録済みの会社の一覧から接続先を引き、一覧にない会社は断る
 //
-// まだやっていないこと：件数の上限と保存期間、削除の期限、バックアップからの復元時の消去のやり直し、暗号化の鍵の管理。
+// まだやっていないこと：保存期間、削除の期限、バックアップからの復元時の消去のやり直し、暗号化の鍵の管理。
 
 import type { Client } from "@libsql/client";
-import { StoreConflictError, StoreCorruptError, type V2Store } from "./store";
+import { StoreConflictError, StoreCorruptError, StoreFullError, type V2Store } from "./store";
 import type { Session } from "./types";
 
 type Awaitable<T> = T | Promise<T>;
@@ -65,10 +66,11 @@ function looksLikeSession(value: unknown): value is Omit<Session, "id" | "rev" |
   );
 }
 
-export function createLibsqlStore(dbFor: TenantDb): V2Store {
-  // 会社ごとに、開いた接続を1つだけ覚えておく（同じ接続を二重に数えない）
-  const opened = new Map<string, Client>();
+export function createLibsqlStore(dbFor: TenantDb, opts?: { maxRows?: number }): V2Store {
+  // 開いた接続を覚えておく（同じ接続は1つだけ。利用者の数だけ増えたりしない）
+  const opened = new Set<Client>();
   const ready = new WeakSet<Client>();
+  const maxRows = opts?.maxRows;
 
   async function open(tenantId: string): Promise<Client> {
     const db = await dbFor(tenantId);
@@ -76,7 +78,7 @@ export function createLibsqlStore(dbFor: TenantDb): V2Store {
       await db.execute(SCHEMA);
       ready.add(db);
     }
-    opened.set(tenantId, db);
+    opened.add(db);
     return db;
   }
 
@@ -114,6 +116,11 @@ export function createLibsqlStore(dbFor: TenantDb): V2Store {
       const json = JSON.stringify(data);
 
       if (rev === undefined) {
+        // 件数の上限があるときは、いっぱいなら新しい面談を断る（すでにある面談は消さない）
+        if (maxRows !== undefined) {
+          const count = await db.execute("SELECT COUNT(*) AS n FROM v2_interviews");
+          if (Number(count.rows[0]?.n ?? 0) >= maxRows) throw new StoreFullError();
+        }
         // 新しく作る。作成ごとに、使い回されない印を付ける。すでにあれば、ほかの操作が先に作っている
         const result = await db.execute({
           sql: `INSERT INTO v2_interviews (tenant_id, user_id, gen, rev, data, updated_at) VALUES (?, ?, ?, 1, ?, ?)
@@ -147,7 +154,7 @@ export function createLibsqlStore(dbFor: TenantDb): V2Store {
     /** この保存先が、動き始めてから開いたデータベースにある面談の数（全社の合計ではない） */
     async size() {
       let total = 0;
-      for (const db of new Set(opened.values())) {
+      for (const db of opened) {
         const result = await db.execute("SELECT COUNT(*) AS n FROM v2_interviews");
         total += Number(result.rows[0]?.n ?? 0);
       }

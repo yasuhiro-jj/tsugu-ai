@@ -328,6 +328,7 @@ describe("既存版（ハッカソン版）へつながる経路がない", () =
     "CLERK_SECRET_KEY",
     "V2_TURSO_DATABASE_URL",
     "V2_TURSO_AUTH_TOKEN",
+    "V2_APP_ORIGIN",
     "TURSO_DATABASE_URL", // ハッカソン版と同じ接続先でないことを確かめるためだけに読む
     "NODE_ENV",
     "VERCEL",
@@ -375,9 +376,14 @@ describe("既存版（ハッカソン版）へつながる経路がない", () =
   it("ハッカソン版のデータベースの接続先は、「同じでないこと」を確かめるためだけに読む", () => {
     const mode = readFileSync(join(ROOT, "lib/v2/mode.ts"), "utf8");
     const uses = mode.split("\n").filter((line) => /(?<!V2_)TURSO_DATABASE_URL/.test(line) && !line.trim().startsWith("//"));
-    // 1行だけ：2.0 の接続先と同じなら使わない、という比較
-    expect(uses).toHaveLength(1);
-    expect(uses[0]).toContain("=== url.trim()) return null");
+    // 2行だけ：「指定があるか」と「ホスト名を取り出す」。どちらも、同じ場所なら使わない、という比較のため
+    expect(uses.map((l) => l.trim())).toEqual([
+      "if (has(env.TURSO_DATABASE_URL)) {",
+      "const other = hostOf(env.TURSO_DATABASE_URL);",
+    ]);
+    // 取り出したホスト名は、比べるだけ。接続には使わない
+    expect(mode).toContain("if (other === null || other === host) return null;");
+    expect(mode.match(/\bother\b/g)).toHaveLength(3);
   });
 
   it("Clerk と Turso を使うのは、検証用の動かし方のときだけ。ハッカソン版の入口（lib/db.ts など）は使わない", () => {
@@ -403,8 +409,10 @@ describe("既存版（ハッカソン版）へつながる経路がない", () =
 
     const runtime = readFileSync(join(ROOT, "lib/v2/runtime.ts"), "utf8");
     // 手元はメモリ保存のまま。Turso と Clerk は、検証用のときだけ選ばれる
-    expect(runtime).toContain('getMode() === "verify" ? verifyStore() : (globalForV2.__tsuguV2Store ??= createMemoryStore())');
-    expect(runtime).toContain('getMode() === "verify" ? createClerkAuth() : createLocalAuth()');
+    expect(runtime).toContain('mode === "verify" ? verifyStore() : (globalForV2.__tsuguV2Store ??= createMemoryStore())');
+    expect(runtime).toContain('mode === "verify" ? createClerkAuth() : createLocalAuth()');
+    // 動かし方は入口が決めて渡す。ここでは決め直さない（入口と食い違わないように）
+    expect(runtime).not.toContain("getMode");
     // 接続先は、動かし方を決めるファイルからだけ受け取る（ここでは環境変数を読まない）
     expect(runtime).toContain("createClient(target)");
     expect(runtime).not.toMatch(/process\s*\.\s*env|@\/lib\/db|\.\.\/db/);
@@ -415,7 +423,9 @@ describe("既存版（ハッカソン版）へつながる経路がない", () =
     // リクエストの入口は、2.0 の画面と API だけを対象にし、検証用のときだけ Clerk を動かす
     const proxy = readFileSync(join(ROOT, "proxy.ts"), "utf8");
     expect(proxy).toContain('matcher: ["/v2", "/v2/:path*", "/api/v2/:path*"]');
-    expect(proxy).toContain('getMode() === "verify" ? clerkMiddleware() : passThrough');
+    expect(proxy).toContain('if (getMode() !== "verify" || origin === null) return passThrough;');
+    // Clerk には、このサイト宛てのログインだけを受け付けさせる
+    expect(proxy).toContain("clerkMiddleware({ authorizedParties: [origin] })");
     expect(proxy).not.toMatch(/process\s*\.\s*env/);
   });
 

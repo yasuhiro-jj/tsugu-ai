@@ -24,6 +24,9 @@ export type AuthProvider = {
   resolve(token: string | null): Actor | null | Promise<Actor | null>;
 };
 
+/** 手元の試作で、サーバーが発行するセッション ID の形 */
+const LOCAL_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
 /**
  * 手元の試作用：ログインなし。
  * クッキーの ID 1つを「一人だけの会社の、経営者本人」として扱う。
@@ -32,7 +35,9 @@ export type AuthProvider = {
 export function createLocalAuth(): AuthProvider {
   return {
     resolve(token) {
-      if (!token) return null;
+      // サーバーが発行した ID の形（43文字）だけを受け付ける。
+      // 検証用の入口が渡す決まった名前など、ほかの文字列は合言葉として通さない
+      if (!token || !LOCAL_TOKEN_PATTERN.test(token)) return null;
       const h = createHash("sha256").update(token).digest("base64url").slice(0, 32);
       return { userId: `u-${h}`, tenantId: `t-${h}`, role: "owner" };
     },

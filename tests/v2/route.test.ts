@@ -199,7 +199,7 @@ describe("新しく始める回数の上限", () => {
     expect(limited).toBe(11);
     // 入口で断った操作も、種類だけ記録に残る
     const { getEnv } = await import("@/lib/v2/runtime");
-    expect(getEnv().audit.list().filter((e) => e.code === "rate_limited" && e.outcome === "denied")).toHaveLength(11);
+    expect(getEnv("local").audit.list().filter((e) => e.code === "rate_limited" && e.outcome === "denied")).toHaveLength(11);
     jar.clear();
     jar.set(COOKIE, mine);
     const kept = await (await GET()).json();
