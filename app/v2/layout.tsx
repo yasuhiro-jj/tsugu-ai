@@ -1,13 +1,21 @@
+import { ClerkProvider } from "@clerk/nextjs";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import AccountMenu from "@/components/v2/AccountMenu";
+import { getMode } from "@/lib/v2/mode";
 import "./v2.css";
 
 // 2.0（試作）の共通の枠。
 // - ハッカソン版の上部メニューは 2.0 の利用者に関係がないので、2.0 の画面でだけ隠す（v2.css）。
-//   既存のファイルは変更していない。
 // - どの画面でも「架空の情報だけ」を最初に伝える。
+// - 検証用の動かし方のときだけ、ログイン（Clerk）の枠で包む。
+//   それ以外（手元の開発、ハッカソン版の本番サイト）では、Clerk の部品は描かない（Clerk への通信も起きない）。
+export const dynamic = "force-dynamic";
+
 export default function V2Layout({ children }: { children: ReactNode }) {
-  return (
+  const withLogin = getMode() === "verify";
+
+  const frame = (
     <div className="v2">
       <div className="v2-header">
         <Link href="/v2" className="v2-header__brand">
@@ -18,6 +26,7 @@ export default function V2Layout({ children }: { children: ReactNode }) {
         <nav className="v2-header__nav" aria-label="2.0 のメニュー">
           <Link href="/v2/interview">面談</Link>
           <Link href="/v2/learn">講座</Link>
+          {withLogin && <AccountMenu />}
         </nav>
       </div>
       <p className="v2-banner" role="note">
@@ -26,5 +35,12 @@ export default function V2Layout({ children }: { children: ReactNode }) {
       </p>
       {children}
     </div>
+  );
+
+  if (!withLogin) return frame;
+  return (
+    <ClerkProvider signInUrl="/v2/sign-in" signUpUrl="/v2/sign-up" afterSignOutUrl="/v2">
+      {frame}
+    </ClerkProvider>
   );
 }

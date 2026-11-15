@@ -306,7 +306,32 @@ describe("既存版（ハッカソン版）へつながる経路がない", () =
   }
 
   const files = V2_DIRS.flatMap((d) => walk(join(ROOT, d))).filter((f) => /\.(ts|tsx)$/.test(f));
-  const isLibsqlStore = (file: string) => file.replace(/\\/g, "/").endsWith("/lib/v2/store-libsql.ts");
+  const rel = (file: string) => file.replace(/\\/g, "/").replace(ROOT.replace(/\\/g, "/"), "");
+  const isLibsqlStore = (file: string) => rel(file) === "/lib/v2/store-libsql.ts";
+
+  // 外の部品（ログインの Clerk、データベースの libSQL）を読み込んでよいファイル。ここにないファイルが読み込んだら失敗する
+  const EXTRA_IMPORTS: Record<string, string[]> = {
+    "@libsql/client": ["/lib/v2/store-libsql.ts", "/lib/v2/runtime.ts"],
+    "@clerk/nextjs/server": ["/lib/v2/auth-clerk.ts"],
+    "@clerk/nextjs": [
+      "/app/v2/layout.tsx",
+      "/app/v2/sign-in/[[...sign-in]]/page.tsx",
+      "/app/v2/sign-up/[[...sign-up]]/page.tsx",
+      "/components/v2/AccountMenu.tsx",
+    ],
+  };
+  // 環境変数を読んでよいのは、動かし方を決めるファイルだけ
+  const MODE_FILE = "/lib/v2/mode.ts";
+  const MODE_ENVS = [
+    "V2_MODE",
+    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+    "CLERK_SECRET_KEY",
+    "V2_TURSO_DATABASE_URL",
+    "V2_TURSO_AUTH_TOKEN",
+    "TURSO_DATABASE_URL", // ハッカソン版と同じ接続先でないことを確かめるためだけに読む
+    "NODE_ENV",
+    "VERCEL",
+  ];
 
   it("2.0 のファイルは、既存の lib・components・DB・AI の部品を読み込まない", () => {
     expect(files.length).toBeGreaterThan(10);
@@ -314,8 +339,8 @@ describe("既存版（ハッカソン版）へつながる経路がない", () =
       const source = readFileSync(file, "utf8");
       const specs = [...source.matchAll(/(?:from\s+|import\s*\(\s*|import\s+)["']([^"']+)["']/g)].map((m) => m[1]);
       for (const spec of specs) {
-        // データベースの部品を読み込んでよいのは、Turso 用の保存先のファイルだけ
-        const ok = ALLOWED.some((re) => re.test(spec)) || (spec === "@libsql/client" && isLibsqlStore(file));
+        // 外の部品を読み込んでよいのは、決めたファイルだけ
+        const ok = ALLOWED.some((re) => re.test(spec)) || (EXTRA_IMPORTS[spec] ?? []).includes(rel(file));
         expect(ok, `${file} が ${spec} を読み込んでいます`).toBe(true);
       }
       // 相対パスで v2 の外へ出ていないこと
@@ -323,22 +348,39 @@ describe("既存版（ハッカソン版）へつながる経路がない", () =
     }
   });
 
-  it("2.0 のファイルは、鍵・外部通信・DB を使わない", () => {
+  it("2.0 のファイルは、AI の鍵・ハッカソン版の鍵・外部の URL を使わない。環境変数を読むのは1つのファイルだけ", () => {
     for (const file of files) {
       const source = readFileSync(file, "utf8");
-      // 鍵の名前（環境変数）と AI の部品は、どのファイルにも出てこない
-      expect(source, file).not.toMatch(/ANTHROPIC|TURSO_|@anthropic-ai/i);
-      // データベースの部品は、Turso 用の保存先のファイルにだけ出てくる
-      if (!isLibsqlStore(file)) expect(source, file).not.toMatch(/@libsql/i);
+      // AI の鍵と部品は、どのファイルにも出てこない（2.0 は、まだ外部の AI につながない）
+      expect(source, file).not.toMatch(/ANTHROPIC|@anthropic-ai/i);
+      // ハッカソン版のデータベースの鍵（TURSO_AUTH_TOKEN）は、どのファイルにも出てこない。
+      // 2.0 専用の名前（V2_TURSO_...）だけを使う
+      expect(source.replace(/V2_TURSO_AUTH_TOKEN/g, ""), file).not.toMatch(/TURSO_AUTH_TOKEN/);
       expect(source, file).not.toMatch(/https?:\/\//);
-      const envs = [...source.matchAll(/process\.env\.([A-Z0-9_]+)/g)].map((m) => m[1]);
-      expect(envs.every((e) => e === "NODE_ENV" || e === "VERCEL"), file).toBe(true);
+
+      const envs = [...source.matchAll(/\b(?:process\.)?env\.([A-Z][A-Z0-9_]+)/g)].map((m) => m[1]);
+      if (rel(file) === MODE_FILE) {
+        expect(envs.filter((e) => !MODE_ENVS.includes(e)), file).toEqual([]);
+      } else {
+        // ほかのファイルは、環境変数をいっさい読まない
+        expect(envs, file).toEqual([]);
+        expect(source, file).not.toMatch(/process\s*\.\s*env|process\s*\[/);
+        expect(source, file).not.toMatch(/TURSO_|CLERK_[A-Z]/);
+      }
       // 名前を変数で指定する読み方や、まとめて取り出す読み方もしていない
-      expect(source, file).not.toMatch(/process\.env\s*\[|=\s*process\.env\b(?!\.)|\}\s*=\s*process\.env/);
+      expect(source, file).not.toMatch(/process\.env\s*\[|\}\s*=\s*process\.env/);
     }
   });
 
-  it("Turso 用の保存先は、まだどこからも使っていない（手元の試作はメモリ保存のまま）", () => {
+  it("ハッカソン版のデータベースの接続先は、「同じでないこと」を確かめるためだけに読む", () => {
+    const mode = readFileSync(join(ROOT, "lib/v2/mode.ts"), "utf8");
+    const uses = mode.split("\n").filter((line) => /(?<!V2_)TURSO_DATABASE_URL/.test(line) && !line.trim().startsWith("//"));
+    // 1行だけ：2.0 の接続先と同じなら使わない、という比較
+    expect(uses).toHaveLength(1);
+    expect(uses[0]).toContain("=== url.trim()) return null");
+  });
+
+  it("Clerk と Turso を使うのは、検証用の動かし方のときだけ。ハッカソン版の入口（lib/db.ts など）は使わない", () => {
     // 2.0 のフォルダだけでなく、リポジトリ全体（テストと依存パッケージを除く）を調べる
     const skip = new Set(["node_modules", ".next", ".git", "tests", "video", "screenshots"]);
     const walkAll = (dir: string): string[] =>
@@ -349,14 +391,32 @@ describe("既存版（ハッカソン版）へつながる経路がない", () =
       });
     const all = walkAll(ROOT).filter((f) => /\.(ts|tsx|js|mjs|cjs)$/.test(f));
     expect(all.length).toBeGreaterThan(files.length);
-    // 拡張子つきの書き方（store-libsql.ts など）も拾う
+
+    // Turso 用の保存先を読み込むのは、runtime.ts だけ（拡張子つきの書き方も拾う）
     const users = all.filter((f) => !isLibsqlStore(f) && /store-libsql(\.[a-z]+)?["'`]/.test(readFileSync(f, "utf8")));
-    expect(users).toEqual([]);
+    expect(users.map(rel)).toEqual(["/lib/v2/runtime.ts"]);
+    // Clerk の部品を読み込むのは、2.0 のファイルと、リクエストの入口（proxy.ts）だけ
+    const clerkUsers = all.filter((f) => /["'`]@clerk\//.test(readFileSync(f, "utf8"))).map(rel).sort();
+    expect(clerkUsers).toEqual(
+      ["/proxy.ts", ...Object.values(EXTRA_IMPORTS["@clerk/nextjs"]), ...EXTRA_IMPORTS["@clerk/nextjs/server"]].sort(),
+    );
+
     const runtime = readFileSync(join(ROOT, "lib/v2/runtime.ts"), "utf8");
-    expect(runtime).toContain("createMemoryStore");
-    // ハッカソン版のデータベースの入口（lib/db.ts）も、鍵の名前も、接続を作る処理も入っていない
+    // 手元はメモリ保存のまま。Turso と Clerk は、検証用のときだけ選ばれる
+    expect(runtime).toContain('getMode() === "verify" ? verifyStore() : (globalForV2.__tsuguV2Store ??= createMemoryStore())');
+    expect(runtime).toContain('getMode() === "verify" ? createClerkAuth() : createLocalAuth()');
+    // 接続先は、動かし方を決めるファイルからだけ受け取る（ここでは環境変数を読まない）
+    expect(runtime).toContain("createClient(target)");
+    expect(runtime).not.toMatch(/process\s*\.\s*env|@\/lib\/db|\.\.\/db/);
+    // Turso 用の保存先そのものには、接続を作る処理も、環境変数も、ハッカソン版の入口も入っていない
     const store = readFileSync(join(ROOT, "lib/v2/store-libsql.ts"), "utf8");
     expect(store).not.toMatch(/process\s*\.\s*env|process\[|createClient|@\/lib\/db|\.\.\/db/);
+
+    // リクエストの入口は、2.0 の画面と API だけを対象にし、検証用のときだけ Clerk を動かす
+    const proxy = readFileSync(join(ROOT, "proxy.ts"), "utf8");
+    expect(proxy).toContain('matcher: ["/v2", "/v2/:path*", "/api/v2/:path*"]');
+    expect(proxy).toContain('getMode() === "verify" ? clerkMiddleware() : passThrough');
+    expect(proxy).not.toMatch(/process\s*\.\s*env/);
   });
 
   it("外部への通信（fetch）は、画面から自分の API を呼ぶ1か所だけ", () => {

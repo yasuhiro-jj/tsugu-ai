@@ -18,6 +18,10 @@ async function call(init?: RequestInit): Promise<ApiResult> {
   } catch {
     return { ok: false, error: NETWORK_ERROR };
   }
+  // ログインが必要なとき（検証用の環境だけで起こる）は、ログインの画面へ移る
+  if (res.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/v2/sign-")) {
+    window.location.assign("/v2/sign-in");
+  }
   const data = (await res.json().catch(() => null)) as { ok?: unknown; error?: unknown; session?: unknown } | null;
   if (res.ok && data && data.ok === true) {
     return { ok: true, session: (data.session ?? null) as SessionView | null };
